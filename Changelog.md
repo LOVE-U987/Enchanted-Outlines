@@ -14,7 +14,6 @@
 - 顺带完善: 颜色输入框(默认色)限制为 7 位(`#RRGGBB` 最长)、数值输入框(厚度)限制为 10 位,
   避免粘贴超长字符串(`EnchantedConfigScreen.java` 的 `addColorRow` / `addDoubleRow`)。
 
-## v0.1.2 (2026-08-08)
 
 ### 修复: 光影(Iris / Oculus)下世界渲染描边透明、颜色丢失、丢失发光、盾/三叉戟反射方块纹理
 
