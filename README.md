@@ -153,9 +153,8 @@ Two toggles control how much the item's own pixel colors bleed into the outline:
 | `armorPixelColorGlint` | `true` | Armor / elytra / trident-entity outlines sample the original texture (shape hugs the single-layer cutout), colored by mixing. `false` = pure outline color, shape from model geometry |
 
 > 💡 Without a shader pack (or with `allowUnknownShaders` enabled), the custom shader keeps shape and color fully separate, so outlines are **always pure colors** and these toggles have no effect.
->
+> 
 > When pixel-color blending is off, a "shape texture" is generated on the CPU from the item sprite's original pixels (RGB = outline color, A = original alpha; cached in `TextureManager`, auto-cleared on resource reload) — so disabling blending never degrades the shape into a rectangle.
-
 
 ## ⚠️ Known Limitations
 
