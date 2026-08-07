@@ -100,6 +100,8 @@ public class EnchantedConfigScreen extends Screen {
             y = addBooleanRow(y, "enable", Config.ENABLE, widgetX);
             y = addDoubleRow(y, "thickness", Config.THICKNESS, 0.0, 8.0, widgetX);
             y = addDoubleRow(y, "armorThickness", Config.ARMOR_THICKNESS, 0.0, 8.0, widgetX);
+            y = addBooleanRow(y, "itemPixelColorGlint", Config.ITEM_PIXEL_COLOR_GLINT, widgetX);
+            y = addBooleanRow(y, "armorPixelColorGlint", Config.ARMOR_PIXEL_COLOR_GLINT, widgetX);
             y = addMergeModeRow(y, widgetX);
         } else {
             y = addColorRow(y, "defaultColor", Config.DEFAULT_COLOR, widgetX);
@@ -147,6 +149,8 @@ public class EnchantedConfigScreen extends Screen {
 
     private int addDoubleRow(int y, String key, ModConfigSpec.DoubleValue value, double min, double max, int widgetX) {
         EditBox box = new EditBox(this.font, widgetX, y + 4, WIDGET_WIDTH, 20, Component.empty());
+        // 数值输入上限:范围 0-8 的小数最长约 10 位,限制后可防止粘贴超长字符串
+        box.setMaxLength(10);
         box.setResponder(s -> {
             try {
                 double v = Double.parseDouble(s.trim());
@@ -178,6 +182,8 @@ public class EnchantedConfigScreen extends Screen {
 
     private int addColorRow(int y, String key, ModConfigSpec.ConfigValue<String> value, int widgetX) {
         EditBox box = new EditBox(this.font, widgetX, y + 4, WIDGET_WIDTH, 20, Component.empty());
+        // 颜色最长 #RRGGBB 共 7 位,限制后多余的字符无法输入
+        box.setMaxLength(7);
         box.setResponder(s -> {
             String t = s.trim();
             if (Config.parseHex(t) >= 0 && !t.equalsIgnoreCase(value.get())) {
@@ -402,8 +408,10 @@ public class EnchantedConfigScreen extends Screen {
         @Override
         protected void init() {
             box = new EditBox(this.font, this.width / 2 - 200, this.height / 2 - 34, 400, 20, Component.empty());
+            // 必须先设上限再赋值:EditBox#setValue 会按当前 maxLength(默认 32)截断字符串,
+            // 若顺序颠倒,超长配置(如默认 enchantColors 远超 32 字符)在打开编辑框时就会被截断,保存即破坏配置。
+            box.setMaxLength(16384);
             box.setValue(initial);
-            box.setMaxLength(4096);
             this.addRenderableWidget(box);
 
             this.addRenderableWidget(Button.builder(

@@ -18,6 +18,12 @@
   "enchanted_outlines.config.armorThickness": "Armor Outline Thickness",
   "enchanted_outlines.config.armorThickness.tooltip": "How many pixels the outline expands beyond the worn armor model. Decimal values are allowed. 0 disables the expansion.",
 
+  "enchanted_outlines.config.itemPixelColorGlint": "Mix Outline With Item Colors",
+  "enchanted_outlines.config.itemPixelColorGlint.tooltip": "Shader-compat mode only: when ON, the outline color is mixed with each item pixel color (applies to flat and 3D items; keeps the item silhouette; the mixed colors look unique). When OFF, the outline is a pure color — flat items still keep their silhouette (reads texture alpha; one-time cost on first render), 3D items keep their geometry-driven shape. Shield/trident box models are always pure color.",
+
+  "enchanted_outlines.config.armorPixelColorGlint": "Mix Armor Outline With Texture",
+  "enchanted_outlines.config.armorPixelColorGlint.tooltip": "Shader-compat mode only: when ON, armor/elytra/projectile outlines sample the original texture alpha mask (hug the layered texture silhouette; color mixes with the texture). When OFF, the outline is a pure color (shape follows the model geometry).",
+
   "enchanted_outlines.config.mergeMode": "Multi-Enchant Color",
   "enchanted_outlines.config.mergeMode.tooltip": "When an item has several enchantments, which color wins?",
   "enchanted_outlines.config.mergeMode.highest": "Highest level first",

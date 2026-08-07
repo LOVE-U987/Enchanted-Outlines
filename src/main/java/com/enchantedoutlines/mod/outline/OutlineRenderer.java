@@ -1,10 +1,14 @@
 package com.enchantedoutlines.mod.outline;
 
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.enchantedoutlines.mod.config.Config;
+import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.shaders.Uniform;
 import com.mojang.blaze3d.vertex.ByteBufferBuilder;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
@@ -22,6 +26,7 @@ import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.client.renderer.block.model.ItemOverrides;
 import net.minecraft.client.renderer.block.model.ItemTransforms;
+import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
@@ -120,6 +125,8 @@ public final class OutlineRenderer {
 
     private RenderType outlineRenderType;
     private RenderType handOutlineRenderType;
+    /** 光影兼容世界渲染 RenderType 缓存(内置 emissive shader,按纹理区分:BLOCK_SHEET 与白色/独立纹理)。 */
+    private final Map<ResourceLocation, RenderType> worldOutlineRenderTypes = new HashMap<>();
     private BakedModel shieldModel;
     /** 生成 shieldModel 时使用的 transforms(blocking 与非 blocking 不同,需跟踪重建)。 */
     private ItemTransforms shieldTransforms;
@@ -127,6 +134,17 @@ public final class OutlineRenderer {
     /** 生成 tridentModel 时使用的 transforms(in_hand 与 throwing 不同,需跟踪重建)。 */
     private ItemTransforms tridentTransforms;
     private final Map<ResourceLocation, RenderType> armorRenderTypes = new HashMap<>();
+
+    /**
+     * "描边色形状纹理"缓存:扁平物品在光影兼容下关闭混色时,为每个 (物品贴图, 描边色)
+     * 生成一张 RGB=描边色、A=贴图 alpha 的动态纹理,让描边既保留物品形状又是纯描边色。
+     * 纹理注册到 TextureManager(资源重载时自动销毁),本缓存随之清空重建。
+     */
+    private final Map<ShapeKey, ResourceLocation> shapeTextures = new HashMap<>();
+
+    /** 形状纹理缓存键:物品贴图 + 描边色(RGB)。 */
+    private record ShapeKey(ResourceLocation spriteName, int color) {
+    }
 
     /** 三叉戟实体纹理(投掷物 ThrownTrident 的模型材质)。 */
     private static final ResourceLocation TRIDENT_ENTITY_TEXTURE =
@@ -136,6 +154,131 @@ public final class OutlineRenderer {
     private static final ResourceLocation ELYTRA_TEXTURE =
             ResourceLocation.withDefaultNamespace("textures/entity/elytra.png");
 
+    /**
+     * 纯白纹理(1×1,不透明)。光影兼容世界渲染专用。
+     * <p>
+     * 用于<b>采样物品贴图会导致异常</b>的路径:
+     * <ul>
+     *   <li>盾牌/三叉戟近似盒模型:盒顶点 UV 是方块图集 stone 精灵的 UV,若采样
+     *       BLOCK_SHEET 会被光影误判为方块材质(盾/三叉戟"反射四周方块纹理");
+     *       纯白独立纹理 → 无方块材质反查,且 1×1 纹理任意 UV 采样结果相同;</li>
+     *   <li>扁平物品(剑/弓/工具)在关闭"附魔光效混合物品颜色"
+     *       (Config.ITEM_PIXEL_COLOR_GLINT=false)时:纯白 → 纯描边色,但失去
+     *       贴图形状(矩形轮廓)。</li>
+     * </ul>
+     */
+    private static final ResourceLocation WHITE_TEXTURE =
+            ResourceLocation.fromNamespaceAndPath("enchanted_outlines", "textures/white.png");
+
+    /**
+     * 世界渲染是否需走<b>内置 shader 兼容路径</b>的判断逻辑。
+     * <p>
+     * 光影(Iris/Oculus)接管世界渲染后,自定义 core shader 的行为由 Iris 的
+     * {@code iris$shouldSkipThis} 决定:默认配置 {@code allowUnknownShaders=false} 时,
+     * 光影激活状态下未知(非 vanilla)shader 的<b>绘制会被 Iris 完全跳过</b>
+     * → 描边被渲染为透明。因此:
+     * <ul>
+     *   <li>光影<b>未激活</b>(未装 Iris、装了但没开光影包)→ 自定义 shader 原样工作,
+     *       效果最佳(alpha boost / cutout / 发光全保留);</li>
+     *   <li>光影激活且 {@code allowUnknownShaders=true}(用户已在 iris.properties 开启
+     *       "允许未知着色器")→ 自定义 shader 可渲染到主 framebuffer,同样完美;</li>
+     *   <li>光影激活且 {@code allowUnknownShaders=false}(默认)→ 自定义 shader 被跳过,
+     *       世界路径改用内置 {@code entity_translucent_emissive} shader 构造的 RenderType
+     *       (见 {@link #worldEmissiveOutlineRenderType()})。</li>
+     * </ul>
+     * GUI 渲染不经光影,始终用自定义 shader。
+     */
+    private boolean needVanillaShaderFallback() {
+        return isShaderPackInUse() && !isUnknownShadersAllowed();
+    }
+
+    /** 反射缓存的 IrisApi 单例(无 Iris 时为 null)。 */
+    private static final Object IRIS_API_INSTANCE = resolveIrisApiInstance();
+
+    /** 反射缓存的 IrisApi.isShaderPackInUse(无 Iris 时为 null)。 */
+    private static final java.lang.reflect.Method IRIS_IS_SHADER_PACK_IN_USE =
+            resolveIrisApiMethod("isShaderPackInUse");
+
+    /** 反射缓存的 IrisConfig 实例(经 Iris.getIrisConfig(),无 Iris 时为 null)。 */
+    private static final Object IRIS_CONFIG_INSTANCE = resolveIrisConfigInstance();
+
+    /** 反射缓存的 IrisConfig.shouldAllowUnknownShaders(无 Iris 时为 null)。 */
+    private static final java.lang.reflect.Method IRIS_SHOULD_ALLOW_UNKNOWN_SHADERS =
+            resolveIrisUnknownShadersMethod();
+
+    /** 反射获取 IrisApi 单例(getInstance 静态方法)。失败(未装 Iris)返回 null。 */
+    private static Object resolveIrisApiInstance() {
+        try {
+            Class<?> api = Class.forName("net.irisshaders.iris.api.v0.IrisApi");
+            return api.getMethod("getInstance").invoke(null);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /** 反射获取 IrisApi 实例方法。失败返回 null。 */
+    private static java.lang.reflect.Method resolveIrisApiMethod(String name) {
+        try {
+            if (IRIS_API_INSTANCE == null) {
+                return null;
+            }
+            return IRIS_API_INSTANCE.getClass().getMethod(name);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /** 反射获取 IrisConfig 单例(经 Iris.getIrisConfig() 静态方法)。失败返回 null。 */
+    private static Object resolveIrisConfigInstance() {
+        try {
+            Class<?> iris = Class.forName("net.irisshaders.iris.Iris");
+            return iris.getMethod("getIrisConfig").invoke(null);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /** 反射获取 IrisConfig.shouldAllowUnknownShaders 实例方法。失败返回 null。 */
+    private static java.lang.reflect.Method resolveIrisUnknownShadersMethod() {
+        try {
+            if (IRIS_CONFIG_INSTANCE == null) {
+                return null;
+            }
+            return IRIS_CONFIG_INSTANCE.getClass().getMethod("shouldAllowUnknownShaders");
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /**
+     * 光影是否激活(Iris 有光影包编译成功并在使用)。
+     *
+     * @return true = 光影正在接管世界渲染
+     */
+    private static boolean isShaderPackInUse() {
+        try {
+            return (Boolean) IRIS_IS_SHADER_PACK_IN_USE.invoke(IRIS_API_INSTANCE);
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    /**
+     * Iris 是否允许未知 shader 渲染(iris.properties 的 allowUnknownShaders)。
+     * <p>
+     * 默认 false:自定义 core shader 在光影激活时被 Iris 跳过绘制(透明)。
+     * 玩家手动开启后,自定义描边 shader 可渲染到主 framebuffer,效果与无光影一致。
+     *
+     * @return true = 允许,自定义 shader 可用
+     */
+    private static boolean isUnknownShadersAllowed() {
+        try {
+            return (Boolean) IRIS_SHOULD_ALLOW_UNKNOWN_SHADERS.invoke(IRIS_CONFIG_INSTANCE);
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
     private OutlineRenderer() {
         this.outlineBuffers = MultiBufferSource.immediate(new ByteBufferBuilder(262144));
     }
@@ -143,6 +286,9 @@ public final class OutlineRenderer {
     /** 着色器加载回调入口(供 EnchantedOutlinesClient 调用)。 */
     public void setOutlineShader(ShaderInstance shader) {
         this.outlineShader = shader;
+        // 资源重载(F3+T 触发 RegisterShadersEvent)时,TextureManager 已销毁全部注册纹理,
+        // "描边色形状纹理"缓存一并失效 → 清空以便按需重建。
+        this.shapeTextures.clear();
     }
 
     /**
@@ -436,7 +582,40 @@ public final class OutlineRenderer {
         }
         int packedColor = 0xFF000000 | (color & 0xFFFFFF);
 
-        VertexConsumer consumer = outlineBuffers.getBuffer(handOutlineRenderType());
+        // 光影兼容:自定义 shader 在"光影激活 + 不允许未知 shader"时被 Iris 跳过绘制
+        // (透明),必须改用内置 emissive shader 的 RenderType。光影未激活或玩家已开启
+        // allowUnknownShaders 时,继续用自定义描边 shader(alpha boost / cutout 全保留)。
+        //   - 扁平物品(剑/弓/工具)开混色:BLOCK_SHEET 保留物品贴图 alpha 遮罩(形状),
+        //     颜色 = 描边色 × 物品贴图像素色(混合,见 Config.ITEM_PIXEL_COLOR_GLINT);
+        //   - 扁平物品关混色:走 renderFlatPureColorShape —— CPU 读取贴图 alpha 生成
+        //     "描边色形状纹理",纯描边色 + 物品形状(不再矩形);
+        //   - 3D 物品(方块等)开混色:BLOCK_SHEET(方块贴图颜色 × 描边色,形状由几何外扩);
+        //   - 3D 物品关混色:纯白纹理(纯描边色,形状仍由几何外扩决定,不退化);
+        //   - 盾牌/三叉戟近似盒模型:全部 quads 用 stone 精灵,采样 BLOCK_SHEET 会被
+        //     Iris 误判为方块材质(反射方块纹理)且 stone 灰把描边色染暗 → 恒纯白纯色。
+        // 展示框(FIXED)在光影 fallback 下也统一半透明(内置 emissive),不再硬切不透明。
+        if (needVanillaShaderFallback() && !model.isGui3d() && !Config.ITEM_PIXEL_COLOR_GLINT.get()) {
+            renderFlatPureColorShape(quads, pose, packedColor, thickness);
+            outlineBuffers.endBatch();
+            return;
+        }
+        RenderType renderType;
+        if (needVanillaShaderFallback()) {
+            if (model.isGui3d()) {
+                // 盾牌/三叉戟盒模型恒纯白;真实 3D 物品按混色开关选择 BLOCK_SHEET / 纯白。
+                renderType = usesOnlyStoneSprite(quads)
+                        ? worldEmissiveOutlineRenderType(WHITE_TEXTURE)
+                        : (Config.ITEM_PIXEL_COLOR_GLINT.get()
+                                ? worldEmissiveOutlineRenderType()
+                                : worldEmissiveOutlineRenderType(WHITE_TEXTURE));
+            } else {
+                // 扁平物品:开混色 → BLOCK_SHEET(关混色已在上方分支处理)
+                renderType = worldEmissiveOutlineRenderType();
+            }
+        } else {
+            renderType = handOutlineRenderType();
+        }
+        VertexConsumer consumer = outlineBuffers.getBuffer(renderType);
         float offset = thickness * THICKNESS_SCALE * HAND_INFLATE_PER_THICKNESS;
         if (model.isGui3d()) {
             // 立体物品(三叉戟/盾牌/方块等):顶点法线平均外扩 —— 每个顶点沿相邻面
@@ -490,6 +669,30 @@ public final class OutlineRenderer {
     }
 
     /**
+     * 判断模型是否全部 quad 都使用 {@code minecraft:block/stone} 精灵 ——
+     * 即 {@link #shieldModel} / {@link #tridentModel} 自建的近似盒模型。
+     * <p>
+     * 盒模型 UV 采样 stone(全不透明,只为 alpha 遮罩);若在光影 fallback 下让其
+     * 采样 BLOCK_SHEET,会被 Iris 当作方块材质反查(盾/三叉戟"反射四周方块纹理")
+     * 且 stone 灰会把描边色染暗 → 必须恒用纯白纹理。
+     *
+     * @param quads 收集到的模型 quads
+     * @return true = 全部 stone,视为盒模型
+     */
+    private static boolean usesOnlyStoneSprite(List<BakedQuad> quads) {
+        if (quads.isEmpty()) {
+            return false;
+        }
+        for (BakedQuad q : quads) {
+            TextureAtlasSprite s = q.getSprite();
+            if (s == null || !s.contents().name().equals(ResourceLocation.withDefaultNamespace("block/stone"))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
      * 单个 quad:顶点经 pose 矩阵变换到 GUI 像素空间,以纯描边色写入。
      * 顶点数据布局(i 步进 8):x, y, z / 打包颜色 / u, v / 未用。
      * 法线取 quad 方向(GUI 下着色器不使用,仅补全格式)。
@@ -505,6 +708,175 @@ public final class OutlineRenderer {
             float v = Float.intBitsToFloat(vertices[i + 5]);
             Vector3f p = poseMatrix.transformPosition(x, y, z, new Vector3f());
             consumer.addVertex(p.x(), p.y(), p.z(), packedColor, u, v,
+                    OverlayTexture.NO_OVERLAY, FULL_BRIGHT,
+                    normal.getX(), normal.getY(), normal.getZ());
+        }
+    }
+
+    /**
+     * 扁平物品"纯描边色 + 保留物品形状"渲染(光影兼容下关闭混色)。
+     * <p>
+     * 内置 emissive fsh 是 {@code texel × vertexColor},单纹理采样无法分离"形状(alpha)"
+     * 与"颜色(RGB)"。解法:CPU 读取物品贴图原图(NativeImage,内存像素非 GPU 回读),
+     * 生成一张 RGB=描边色、A=原 alpha 的"描边色形状纹理"(见
+     * {@link #shapeTextureFor(TextureAtlasSprite, int)}),再按 8 方向平移渲染 →
+     * 输出 = 纯描边色 × 贴图 alpha = 纯色物品轮廓,形状与开启混色时一致。
+     * <p>
+     * 顶点 UV 需从 atlas 绝对坐标重映射为 sprite 相对坐标(独立纹理 0..1)。
+     * 顶点颜色传白色(描边色已烘焙进纹理)。
+     *
+     * @param quads     收集到的模型 quads
+     * @param pose      已居中(translate(-0.5))的 PoseStack
+     * @param color     ARGB 描边色
+     * @param thickness 描边厚度(像素语义)
+     */
+    private void renderFlatPureColorShape(List<BakedQuad> quads, PoseStack pose, int color, float thickness) {
+        float t = thickness * THICKNESS_SCALE / 16.0f;
+        // 按 sprite 分组:同一贴图的 quad 共用一张形状纹理(同一 RenderType 一次绑定)
+        Map<TextureAtlasSprite, List<BakedQuad>> bySprite = new LinkedHashMap<>();
+        for (BakedQuad q : quads) {
+            TextureAtlasSprite sprite = q.getSprite();
+            if (sprite == null) {
+                continue;
+            }
+            bySprite.computeIfAbsent(sprite, k -> new ArrayList<>()).add(q);
+        }
+        for (Map.Entry<TextureAtlasSprite, List<BakedQuad>> entry : bySprite.entrySet()) {
+            TextureAtlasSprite sprite = entry.getKey();
+            ResourceLocation tex = shapeTextureFor(sprite, color);
+            VertexConsumer consumer = outlineBuffers.getBuffer(worldEmissiveOutlineRenderType(tex));
+            for (float[] off : OFFSETS) {
+                pose.pushPose();
+                try {
+                    pose.translate(off[0] * t, off[1] * t, 0.0f);
+                    Matrix4f m = pose.last().pose();
+                    for (BakedQuad quad : entry.getValue()) {
+                        emitQuadShape(sprite, quad, m, consumer);
+                    }
+                } finally {
+                    pose.popPose();
+                }
+            }
+        }
+    }
+
+    /**
+     * 生成(或取缓存)"描边色形状纹理":与源贴图同尺寸,RGBA 中 RGB=描边色、
+     * A=源贴图 alpha。注册到 TextureManager,之后 RenderType 可直接按 location 采样。
+     * <p>
+     * <b>统一入口</b>:扁平物品(atlas sprite)与盔甲/鞘翅/投掷物(独立纹理)共用
+     * 同一套生成逻辑 —— 无论混色开关如何,描边形状始终贴合源贴图的 alpha 遮罩,
+     * 只是"颜色来源"不同(混色开 = 纹理 RGB × 描边色;混色关 = 纯描边色)。
+     * <p>
+     * 缓存键 = (源贴图 location, 描边色);资源重载时 TextureManager 销毁纹理,缓存由
+     * {@link #setOutlineShader} 清空,按需重建。
+     *
+     * @param source 源贴图 location(仅作缓存键与纹理命名)
+     * @param src    源贴图像素(读取方负责获取与关闭)
+     * @param color  ARGB 描边色
+     * @return 已注册的纹理 location
+     */
+    private ResourceLocation shapeTexture(ResourceLocation source, NativeImage src, int color) {
+        int rgb = color & 0xFFFFFF;
+        ShapeKey key = new ShapeKey(source, rgb);
+        ResourceLocation loc = this.shapeTextures.get(key);
+        if (loc == null) {
+            int w = src.getWidth(), h = src.getHeight();
+            NativeImage img = new NativeImage(w, h, false);
+            int r = (rgb >> 16) & 0xFF, g = (rgb >> 8) & 0xFF, b = rgb & 0xFF;
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    // NativeImage RGBA 内存小端 → getPixelRGBA 返回 ABGR 打包,alpha 在最高字节
+                    int a = (src.getPixelRGBA(x, y) >>> 24) & 0xFF;
+                    img.setPixelRGBA(x, y, (a << 24) | (b << 16) | (g << 8) | r);
+                }
+            }
+            loc = ResourceLocation.fromNamespaceAndPath("enchanted_outlines",
+                    "shape/" + source.getNamespace() + "/"
+                            + source.getPath().replace('/', '_') + "_"
+                            + Integer.toHexString(rgb));
+            Minecraft.getInstance().getTextureManager().register(loc, new DynamicTexture(img));
+            this.shapeTextures.put(key, loc);
+        }
+        return loc;
+    }
+
+    /**
+     * 扁平物品版形状纹理:从 atlas 精灵取原图像素后走统一入口 {@link #shapeTexture}。
+     *
+     * @param sprite 物品贴图(atlas 精灵)
+     * @param color  ARGB 描边色
+     * @return 已注册的纹理 location;拿不到像素时回退纯白矩形
+     */
+    private ResourceLocation shapeTextureFor(TextureAtlasSprite sprite, int color) {
+        NativeImage src = spriteOriginalImage(sprite);
+        if (src == null) {
+            // 拿不到贴图像素(反射失败等):回退纯白矩形,保证描边仍可见
+            return WHITE_TEXTURE;
+        }
+        return shapeTexture(sprite.contents().name(), src, color);
+    }
+
+    /**
+     * 独立纹理(盔甲/鞘翅/投掷物实体)版形状纹理:从 ResourceManager 读取纹理 PNG,
+     * 走统一入口 {@link #shapeTexture}。
+     *
+     * @param texture 独立纹理 location(如 armor / elytra / trident 材质)
+     * @param color   ARGB 描边色
+     * @return 已注册的纹理 location;读取失败时回退纯白矩形
+     */
+    private ResourceLocation shapeTextureForLocation(ResourceLocation texture, int color) {
+        try {
+            var resource = Minecraft.getInstance().getResourceManager().getResource(texture);
+            if (resource.isEmpty()) {
+                return WHITE_TEXTURE;
+            }
+            try (InputStream in = resource.get().open();
+                 NativeImage src = NativeImage.read(in)) {
+                return shapeTexture(texture, src, color);
+            }
+        } catch (Exception ignored) {
+            return WHITE_TEXTURE;
+        }
+    }
+
+    /**
+     * 读取贴图精灵的原始图像(NativeImage,CPU 内存像素,非 GPU 回读)。
+     * <p>
+     * 1.21.1 的 {@code SpriteContents.originalImage} 是私有字段且无公开 getter,
+     * 用反射读取(mojmap 字段名运行期稳定;失败返回 null 由调用方回退)。
+     */
+    private static NativeImage spriteOriginalImage(TextureAtlasSprite sprite) {
+        try {
+            java.lang.reflect.Field field = sprite.contents().getClass().getDeclaredField("originalImage");
+            field.setAccessible(true);
+            return (NativeImage) field.get(sprite.contents());
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    /**
+     * 单个 quad 以"形状纹理"模式写入:UV 从 atlas 绝对坐标重映射为该 sprite 的相对坐标
+     * (0..1,独立纹理全图),顶点颜色传白色(描边色已烘焙进纹理)。
+     */
+    private static void emitQuadShape(TextureAtlasSprite sprite, BakedQuad quad, Matrix4f poseMatrix,
+                                      VertexConsumer consumer) {
+        int[] vertices = quad.getVertices();
+        Vec3i normal = safeQuadNormal(quad);
+        float u0 = sprite.getU0(), u1 = sprite.getU1();
+        float v0 = sprite.getV0(), v1 = sprite.getV1();
+        float uw = u1 - u0, vh = v1 - v0;
+        for (int i = 0; i + 8 <= vertices.length; i += 8) {
+            float x = Float.intBitsToFloat(vertices[i]);
+            float y = Float.intBitsToFloat(vertices[i + 1]);
+            float z = Float.intBitsToFloat(vertices[i + 2]);
+            float u = Float.intBitsToFloat(vertices[i + 4]);
+            float v = Float.intBitsToFloat(vertices[i + 5]);
+            float ru = uw > 1e-6f ? (u - u0) / uw : 0.0f;
+            float rv = vh > 1e-6f ? (v - v0) / vh : 0.0f;
+            Vector3f p = poseMatrix.transformPosition(x, y, z, new Vector3f());
+            consumer.addVertex(p.x(), p.y(), p.z(), 0xFFFFFFFF, ru, rv,
                     OverlayTexture.NO_OVERLAY, FULL_BRIGHT,
                     normal.getX(), normal.getY(), normal.getZ());
         }
@@ -560,6 +932,80 @@ public final class OutlineRenderer {
                             .setLightmapState(RenderStateShard.NO_LIGHTMAP)
                             .createCompositeState(false));
             this.handOutlineRenderType = type;
+        }
+        return type;
+    }
+
+    /**
+     * 光影兼容:世界渲染半透明发光描边 RenderType(BLOCK_SHEET,扁平物品专用)。
+     * <p>
+     * <b>为什么需要内置 shader:</b>Iris 默认 {@code allowUnknownShaders=false} 且光影激活时,
+     * 自定义 core shader(如 {@code enchanted_outlines:outline})的绘制被 Iris 直接跳过
+     * (见 {@link #needVanillaShaderFallback()})→ 描边透明。改用内置
+     * {@code entity_translucent_emissive} shader 后,Iris 有完善 gbuffer 映射
+     * (ENTITY_TRANSLUCENT_EMISSIVE),光影可正确渲染描边。
+     * <p>
+     * <b>为什么 emissive:</b>内置 {@code entity_translucent} 会乘 lightmap,Iris 的
+     * gbuffer 阶段会重写实体光照 → 描边在暗处变暗、失去"发光"感;emissive 变体
+     * 不乘 lightmap、RGB 全亮 → 描边始终是鲜艳的纯色(发光效果)。
+     * <p>
+     * <b>扁平物品为何仍用 BLOCK_SHEET:</b>剑/工具等扁平物品是整张 16×16 平面 quad,
+     * 形状全靠物品贴图的 alpha 遮罩(8 方向平移裁出轮廓)。改用纯白纹理会变成实心
+     * 方块。代价是内置 fsh 的 {@code texel × vertexColor} 会用物品贴图 RGB 染一遍
+     * 描边色(如铁剑灰 × 金色 ≈ 暗金)——这是"单纹理采样无法分离 alpha 与 RGB"的
+     * 硬限制;emissive 全亮下偏色比普通版轻。若开启 Iris 的 allowUnknownShaders,
+     * 自动回退自定义 shader,颜色完全准确。
+     */
+    private RenderType worldEmissiveOutlineRenderType() {
+        RenderType type = this.worldOutlineRenderTypes.get(TextureAtlas.LOCATION_BLOCKS);
+        if (type == null) {
+            type = RenderType.create("enchanted_outlines_world_outline",
+                    DefaultVertexFormat.NEW_ENTITY, VertexFormat.Mode.QUADS, 1024, false, false,
+                    RenderType.CompositeState.builder()
+                            .setShaderState(RenderStateShard.RENDERTYPE_ENTITY_TRANSLUCENT_EMISSIVE_SHADER)
+                            .setTextureState(RenderStateShard.BLOCK_SHEET)
+                            .setTransparencyState(RenderStateShard.TRANSLUCENT_TRANSPARENCY)
+                            .setCullState(RenderStateShard.NO_CULL)
+                            .setDepthTestState(RenderStateShard.LEQUAL_DEPTH_TEST)
+                            .setWriteMaskState(RenderStateShard.COLOR_WRITE)
+                            .setLightmapState(RenderStateShard.LIGHTMAP)
+                            .setOverlayState(RenderStateShard.OVERLAY)
+                            .createCompositeState(false));
+            this.worldOutlineRenderTypes.put(TextureAtlas.LOCATION_BLOCKS, type);
+        }
+        return type;
+    }
+
+    /**
+     * 光影兼容:世界渲染半透明发光描边 RenderType(独立纹理)。
+     * <p>
+     * 供<b>非方块图集的独立纹理路径</b>使用(盔甲/鞘翅/三叉戟投掷物实体的原纹理,
+     * 或 {@link #WHITE_TEXTURE} 纯白):独立纹理不触发 Iris 的方块材质反查,
+     * 消除"盾/三叉戟反射四周方块纹理"的 gbuffer 污染;emissive 不乘 lightmap →
+     * 描边全亮发光。
+     * <p>
+     * 用原纹理(盔甲等):形状由纹理 alpha 遮罩贴合(与无光影算法相同),颜色 =
+     * 纹理 RGB × 描边色(内置 fsh 的 {@code texel × vertexColor},混合不可避免,
+     * 但盔甲纹理多为中性色,混合后偏色轻)。用纯白纹理:输出纯描边色(形状由几何决定)。
+     *
+     * @param texture 采样纹理(盔甲基础材质 / elytra / trident 实体纹理 / 纯白)
+     */
+    private RenderType worldEmissiveOutlineRenderType(ResourceLocation texture) {
+        RenderType type = this.worldOutlineRenderTypes.get(texture);
+        if (type == null) {
+            type = RenderType.create("enchanted_outlines_world_entity_outline",
+                    DefaultVertexFormat.NEW_ENTITY, VertexFormat.Mode.QUADS, 1024, false, false,
+                    RenderType.CompositeState.builder()
+                            .setShaderState(RenderStateShard.RENDERTYPE_ENTITY_TRANSLUCENT_EMISSIVE_SHADER)
+                            .setTextureState(new RenderStateShard.TextureStateShard(texture, false, false))
+                            .setTransparencyState(RenderStateShard.TRANSLUCENT_TRANSPARENCY)
+                            .setCullState(RenderStateShard.NO_CULL)
+                            .setDepthTestState(RenderStateShard.LEQUAL_DEPTH_TEST)
+                            .setWriteMaskState(RenderStateShard.COLOR_WRITE)
+                            .setLightmapState(RenderStateShard.LIGHTMAP)
+                            .setOverlayState(RenderStateShard.OVERLAY)
+                            .createCompositeState(false));
+            this.worldOutlineRenderTypes.put(texture, type);
         }
         return type;
     }
@@ -739,7 +1185,7 @@ public final class OutlineRenderer {
         }
 
         float scale = 1.0f + thickness * THICKNESS_SCALE * ARMOR_INFLATE_PER_THICKNESS;
-        VertexConsumer consumer = outlineBuffers.getBuffer(armorOutlineRenderType(texture));
+        VertexConsumer consumer = outlineBuffers.getBuffer(armorOutlineRenderType(texture, color));
         // 逐部件绕各自包围盒中心放大:每个 3D 盒子(头/身/臂/腿)独立膨胀,
         // 位移 = (scale-1)×盒半对角线 → 各部件描边均匀。整体绕人形中心放大会让
         // 头/手/脚等离中心远的部件描边异常粗、躯干处薄,且整块实心壳臃肿。
@@ -846,7 +1292,7 @@ public final class OutlineRenderer {
         setOutlineAlphaBoost(2.0f);
         int packedColor = 0xFF000000 | (color & 0xFFFFFF);
         float scale = 1.0f + thickness * THICKNESS_SCALE * inflatePerThick;
-        VertexConsumer consumer = outlineBuffers.getBuffer(armorOutlineRenderType(texture));
+        VertexConsumer consumer = outlineBuffers.getBuffer(armorOutlineRenderType(texture, color));
         pose.pushPose();
         try {
             for (ModelPart part : models) {
@@ -859,14 +1305,35 @@ public final class OutlineRenderer {
     }
 
     /**
-     * 盔甲描边 RenderType:同着色器 + 该部件 armor 材质 + <b>半透明混合</b> + 只写颜色不写深度。
+     * 盔甲/鞘翅/投掷物描边 RenderType <b>统一入口</b>。
      * <p>
-     * 用 TRANSLUCENT_TRANSPARENCY(而非 NO_TRANSPARENCY):描边着色器输出
-     * alpha = texel.a × vertexColor.a × boost。若 blend 关闭,RGB 会被无脑写满整个盒子
-     * (单层纹理的透明/镂空区域也被涂成描边色);blend 开启后 alpha 生效 → 描边只出现在
-     * 纹理不透明区域,贴合单层纹理的轮廓形状。
+     * 无论混色开关与光影状态如何,<b>外层几何算法(renderPartInflated 逐 cube 放大壳)
+     * 都是同一个</b>,本方法只负责选择"采样纹理",让不同模式下的形状保持一致:
+     * <ul>
+     *   <li>无光影 / 已开启 allowUnknownShaders(自定义 shader)→ 原纹理 + 自定义
+     *       描边 shader(alpha boost 抬升,形状贴合纹理镂空);</li>
+     *   <li>光影 fallback + 混色开(armorPixelColorGlint=true)→ 原纹理 + emissive
+     *       (形状贴合纹理镂空,颜色与纹理混合);</li>
+     *   <li>光影 fallback + 混色关(armorPixelColorGlint=false)→ <b>描边色形状纹理</b>
+     *       (读取原纹理 alpha 遮罩,RGB=描边色)+ emissive —— 形状与混色开时
+     *       <b>完全一致</b>,只是颜色为纯描边色。</li>
+     * </ul>
+     * 即:三种模式统一调用同一个外层算法,仅颜色来源(纹理 RGB / 纯描边色)不同。
+     *
+     * @param texture 盔甲/鞘翅/投掷物基础纹理(原纹理)
+     * @param color   描边 ARGB(混色关时用于烘焙形状纹理)
      */
-    private RenderType armorOutlineRenderType(ResourceLocation texture) {
+    private RenderType armorOutlineRenderType(ResourceLocation texture, int color) {
+        if (needVanillaShaderFallback()) {
+            if (Config.ARMOR_PIXEL_COLOR_GLINT.get()) {
+                // 混色开:采样原纹理(alpha 遮罩 + 颜色混合)
+                return worldEmissiveOutlineRenderType(texture);
+            }
+            // 混色关:采样"描边色形状纹理"(保留原纹理 alpha 遮罩形状,纯描边色)
+            ResourceLocation shapeTex = shapeTextureForLocation(texture, color);
+            return worldEmissiveOutlineRenderType(shapeTex);
+        }
+        // 自定义 shader:原纹理 + 描边 shader(alpha boost)
         RenderType type = this.armorRenderTypes.get(texture);
         if (type == null) {
             type = RenderType.create("enchanted_outlines_armor",

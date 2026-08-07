@@ -37,13 +37,13 @@ public final class Config {
             .comment("Outline thickness for items in pixels beyond the item sprite (0-8, decimal allowed).",
                     "物品(GUI/手持/投掷物)描边超出物品贴图的像素数,支持小数,0 关闭描边扩张。",
                     "实际偏移 = 值 × 0.5(贴图边缘渐变像素也会计入视觉宽度,1 即约半像素细线)。")
-            .defineInRange("thickness", 1.0, 0.0, 8.0);
+            .defineInRange("thickness", 2.0, 0.0, 8.0);
 
     /** 盔甲描边厚度(名义像素,支持小数;实际偏移 = 值 × 0.5)。 */
     public static final ModConfigSpec.DoubleValue ARMOR_THICKNESS = BUILDER
             .comment("Outline thickness for worn armor in pixels beyond the model (0-8, decimal allowed).",
                     "盔甲描边超出模型的像素数,支持小数,0 关闭盔甲描边扩张。")
-            .defineInRange("armorThickness", 2.0, 0.0, 8.0);
+            .defineInRange("armorThickness", 4.0, 0.0, 8.0);
 
     /** 多附魔取色模式 */
     public static final ModConfigSpec.ConfigValue<String> MERGE_MODE = BUILDER
@@ -51,13 +51,56 @@ public final class Config {
                     "多附魔时以哪个附魔颜色为准:highest(最高等级)或 first(列表首个)。")
             .define("mergeMode", "highest");
 
+    /**
+     * 附魔光效是否根据物品每个像素的颜色确定(光影兼容模式)。
+     * <p>
+     * 开启光影且 Iris 默认配置(不允许未知 shader)时,描边只能采样物品贴图
+     * (BLOCK_SHEET)来获得形状 → 内置 fsh 的 {@code 描边色 × 物品贴图像素色}
+     * 会让描边色与物品本身的颜色混合(如红色描边在钻石剑上呈黄绿色)。
+     * 这是"形状与颜色共用同一张贴图"的硬限制。
+     * <ul>
+     *   <li>true(默认):保留形状(贴合物品轮廓),接受颜色混合 —— 混合出的颜色
+     *       往往独特有趣。对扁平物品(剑/弓)与 3D 物品(方块等)都生效;</li>
+     *   <li>false:描边为纯描边色 —— 扁平物品由 CPU 读取贴图 alpha 生成
+     *       "描边色形状纹理"保留物品轮廓;3D 物品形状由几何决定本就保留。</li>
+     * </ul>
+     * 盾牌/三叉戟近似盒模型恒为纯色(盒模型无贴图遮罩,采样方块图集会被光影
+     * 误判为方块材质而反射)。无光影 / 已开启 Iris 的 allowUnknownShaders 时,
+     * 自定义 shader 可分离形状与颜色,描边始终为纯色,本配置不影响。
+     */
+    public static final ModConfigSpec.BooleanValue ITEM_PIXEL_COLOR_GLINT = BUILDER
+            .comment("Mix outline color with each item pixel color (shader-compat mode only).",
+                    "附魔光效是否根据物品每个像素的颜色确定(仅光影兼容模式下生效):",
+                    "true = 描边色与物品贴图像素颜色混合(扁平物品与 3D 物品均生效,保留物品形状,颜色混合后独特有趣);",
+                    "false = 描边为纯色:扁平物品仍保留物品形状(需读取贴图 alpha,首次渲染该物品有一次性的小开销),3D 物品形状由几何决定。",
+                    "盾牌/三叉戟近似盒模型恒为纯色。")
+            .define("itemPixelColorGlint", true);
+
+    /**
+     * 盔甲/鞘翅/投掷物实体的描边是否与纹理颜色混合(光影兼容模式)。
+     * <p>
+     * 与 {@link #ITEM_PIXEL_COLOR_GLINT} 同机制:开启光影且不允许未知 shader 时,
+     * 实体描边采样自身纹理获得 alpha 遮罩 → 内置 fsh 的 {@code 描边色 × 纹理色}
+     * 会让描边色与纹理颜色混合。
+     * <ul>
+     *   <li>true(默认):采样盔甲/鞘翅/三叉戟原纹理(形状贴合单层纹理镂空,接受颜色混合);</li>
+     *   <li>false:描边为纯描边色(形状由模型几何决定,不再贴合纹理镂空)。</li>
+     * </ul>
+     */
+    public static final ModConfigSpec.BooleanValue ARMOR_PIXEL_COLOR_GLINT = BUILDER
+            .comment("Mix armor outline color with the armor texture (shader-compat mode only).",
+                    "盔甲/鞘翅/投掷物描边是否与纹理颜色混合(仅光影兼容模式下生效):",
+                    "true = 采样原纹理 alpha 遮罩(贴合单层纹理轮廓,颜色与纹理混合);",
+                    "false = 描边为纯描边色(形状由模型几何决定)。")
+            .define("armorPixelColorGlint", true);
+
     // ==================== 颜色 ====================
 
     /** 默认描边色 */
     public static final ModConfigSpec.ConfigValue<String> DEFAULT_COLOR = BUILDER
             .comment("Default outline color as hex RGB (RRGGBB).",
                     "未单独配置颜色的附魔所用的默认描边色。")
-            .define("defaultColor", "55FFFF");
+            .define("defaultColor", "FFC0CB");
 
     /** 逐附魔颜色映射 */
     public static final ModConfigSpec.ConfigValue<String> ENCHANT_COLORS = BUILDER

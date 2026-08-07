@@ -81,6 +81,7 @@ No need to manually edit TOML files. Adjust everything in-game through a polishe
 - 📜 **Scrollable lists**: Supports large numbers of enchantment/item entries
 - 💾 **Instant save**: Changes take effect immediately, no restart required
 - 🚫 **Blur background disabled**: Avoids conflicts with certain UI mods
+- 🎛️ **Pixel-color glint toggles** (`itemPixelColorGlint` / `armorPixelColorGlint`): decide whether the outline blends with the item's per-pixel texture color under shader packs, or stays a pure solid color
 
 ---
 
@@ -133,7 +134,27 @@ NeoForge.EVENT_BUS.addListener(OutlineColorEvent.class, event -> {
 | Custom Model Mods (OptiFine / EMF / ETF) | ✅ Fully Compatible | Shader-level processing, no texture dependency |
 | UI Beautification Mods | ✅ Compatible | Blur background disabled to avoid conflicts |
 | Other Enchantment Visual Mods | ⚠️ Test Recommended | May produce overlay effects |
-| Shader Packs | ✅ Compatible | Rendered before post-processing |
+| Shader Packs (Iris / Oculus) | ✅ Compatible | Runtime detection via reflection (no hard dependency); active packs use a built-in `entity_translucent_emissive` fallback so world outlines stay bright & correctly colored — see below |
+
+### Shader-Pack (Iris / Oculus) Fallback Mode
+
+Enchanted Outlines **detects shader packs at runtime** (reflecting `IrisApi` — no compile-time dependency, and behavior is completely unchanged when Iris is installed but no pack is active). When a shader pack is active and `allowUnknownShaders` is off (Iris default), custom core shaders get skipped by Iris, so world rendering falls back to a built-in `entity_translucent_emissive` RenderType:
+
+- **Emissive glow preserved** — no lightmap multiplication, so outlines stay full-bright instead of being darkened by the pack's lighting rewrite.
+- **Shield / trident box models** sample a dedicated **pure-white texture** (not the block atlas) → no more "shields/tridents reflecting nearby block textures"; colors stay pure.
+- **Flat items** (swords/bows/tools) keep the block sheet — the sprite's alpha mask still defines the shape.
+- **Item frames** render uniformly as translucent glow in fallback mode.
+
+Two toggles control how much the item's own pixel colors bleed into the outline:
+
+| Config | Default | Effect (shader-pack fallback mode) |
+|--------|---------|------------------------------------|
+| `itemPixelColorGlint` | `true` | Flat & 3D item outlines blend with the item's per-pixel texture color (`outline color × texture color`, e.g. red outline on a diamond sword appears yellow-green). `false` = pure outline color with the exact item shape preserved |
+| `armorPixelColorGlint` | `true` | Armor / elytra / trident-entity outlines sample the original texture (shape hugs the single-layer cutout), colored by mixing. `false` = pure outline color, shape from model geometry |
+
+> 💡 Without a shader pack (or with `allowUnknownShaders` enabled), the custom shader keeps shape and color fully separate, so outlines are **always pure colors** and these toggles have no effect.
+>
+> When pixel-color blending is off, a "shape texture" is generated on the CPU from the item sprite's original pixels (RGB = outline color, A = original alpha; cached in `TextureManager`, auto-cleared on resource reload) — so disabling blending never degrades the shape into a rectangle.
 
 
 ## ⚠️ Known Limitations
@@ -143,6 +164,7 @@ NeoForge.EVENT_BUS.addListener(OutlineColorEvent.class, event -> {
 | 🔱 Thrown trident cannot color by enchantment | Client cannot access `pickupItemStack` enchantment list | Falls back to `isFoil()` check, uses item fixed color / default color |
 | 🎣 Fishing rods, 🗺️ maps not outlined | BEWLR placeholder models lack geometric shapes | No current solution, does not affect normal use |
 | 🛡️ Shields / 🔱 Tridents / 🔭 Spyglasses have approximate outlines | Box model approximation used | Still visually distinguishable |
+| 🛡️ Shield / trident boxes are always pure white under shader packs | Box models use the dedicated white texture to avoid Iris's block-atlas lookup | Acceptable trade-off; still glows and contrasts clearly |
 
 ---
 

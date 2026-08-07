@@ -18,6 +18,12 @@
   "enchanted_outlines.config.armorThickness": "盔甲描边厚度",
   "enchanted_outlines.config.armorThickness.tooltip": "盔甲描边超出模型的像素数，支持小数。设为 0 可关闭盔甲描边扩张。",
 
+  "enchanted_outlines.config.itemPixelColorGlint": "附魔光效混合物品颜色",
+  "enchanted_outlines.config.itemPixelColorGlint.tooltip": "仅光影兼容模式生效：开启时描边色与物品贴图每个像素的颜色混合（扁平物品与 3D 物品均生效，保留物品轮廓形状，混合色独特有趣）；关闭时描边为纯色——扁平物品仍保留物品形状（需读取贴图 alpha，首次渲染有一次性的小开销），3D 物品形状由几何决定。盾牌/三叉戟近似盒模型恒为纯色。",
+
+  "enchanted_outlines.config.armorPixelColorGlint": "盔甲光效混合纹理颜色",
+  "enchanted_outlines.config.armorPixelColorGlint.tooltip": "仅光影兼容模式生效：开启时盔甲/鞘翅/投掷物描边采样原纹理 alpha 遮罩（贴合单层纹理轮廓，颜色与纹理混合）；关闭时描边为纯色（形状由模型几何决定）。",
+
   "enchanted_outlines.config.mergeMode": "多附魔取色",
   "enchanted_outlines.config.mergeMode.tooltip": "当一件物品带有多个附魔时,以哪个附魔的颜色为准?",
   "enchanted_outlines.config.mergeMode.highest": "最高等级优先",
