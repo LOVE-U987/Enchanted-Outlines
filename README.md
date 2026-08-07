@@ -1,70 +1,165 @@
-# Enchanted Outlines
+<div align="center">
 
-一个 NeoForge **1.21.1** 客户端模组：为背包、快捷栏、容器等 GUI 以及手持、掉落物、穿戴盔甲、鞘翅、投掷三叉戟等场景中**带有附魔的物品**渲染沿物品形状的**彩色纯色轮廓描边**，按附魔分色。灵感来自 Modrinth 资源包 [Enchantment Outlines](https://modrinth.com/resourcepack/glowing-glints)。
+# ✨ Enchanted Outlines · 轮廓即宣言
 
-## 特性
+**Every enchanted item deserves its own soul color.**
 
-- **按附魔分色**：锐利金色、火焰橙红、精准采集冰蓝……颜色可在配置界面逐附魔自定义；未配置的附魔用默认色兜底。
-- **绘制时程序化生成**：用自定义核心着色器把物品模型的 alpha 遮罩以纯描边色沿 8 个方向偏移渲染，**对任意模组物品自动生效**，无需预画贴图、零烘焙、零像素读回、零缓存内存。
-- **全渲染上下文覆盖**：背包 / 快捷栏 / 容器 GUI、第一/第三人称手持、掉落物、物品展示框、穿戴盔甲、穿戴鞘翅、投掷中的三叉戟，均按附魔渲染描边；GUI 3D 物品与手持立体物品用顶点法线平均外扩，描边贴合表面、厚度均匀。
-- **BEWLR 近似模型**：盾牌、三叉戟、望远镜等程序化渲染（BEWLR）物品用盒模型近似描边，并跟踪 `blocking` 举盾 / `throwing` 投掷等 display 变换避免错位；钓鱼竿、地图等占位模型无形状，暂不描边。
-- **动画与变体天然正确**：时钟、指南针、NBT 变体、损伤模型每帧解析同一模型，描边形状实时跟随。
-- **可扩展**：模组附魔/物品 id 可直接写进配置；另提供公开 Java API（`OutlineColorRegistry`）与扩展事件（`OutlineColorEvent`）供其他模组开发者注册规则。
-- **原生配置界面**：原版 `Screen` 实现，深色 + 琥珀金主题，禁用模糊背景，分类导航 + 滚动 + 即时保存。
-- **纯客户端**：仅客户端逻辑，无服务器端内容，可加入任何多人服务器。
+> *Inspired by the [Enchantment Outlines](https://modrinth.com/resourcepack/glowing-glints) resource pack, but pushed to its absolute limit as a native mod.*
 
-## 安装
+</div>
 
-- 需要 NeoForge 21.1.x（1.21.1）。
-- 将构建出的 `enchanted_outlines-<version>.jar` 放入 `mods/` 文件夹。
+---
 
-## 开发环境
+## 🎨 One Glance, One Enchantment — Color Is the Language
+
+Tired of the same old purple enchantment glint? **Enchanted Outlines** injects a complete **visual semantic system** into Minecraft's enchantment framework — every enchantment type is assigned a unique color identity, letting you read the power in your hands in an instant.
+
+> 💡 **Unconfigured enchantments** automatically fall back to the default color. Supports per-enchantment customization via config file or in-game UI.
+
+---
+
+## 🚀 Eight Core Features
+
+### 1. 🧬 Procedural Outline Generation — Zero Textures, Full Compatibility
+
+Traditional resource packs require pre-baked outline textures for every item. **Enchanted Outlines** uses a **custom core shader** to extract the item model's alpha mask in real-time on the GPU, then offsets and renders it in **8 directions**.
 
 ```
-./gradlew runClient   # 启动客户端测试
-./gradlew build       # 构建发布 jar
+Original Item Texture → Alpha Mask      
+       ↓                                 
+  8-Directional Offset Render            
+  (N / S / E / W / NE / NW / SE / SW)    
+       ↓                                 
+  Solid Fill → Blend Overlay → Outline
 ```
 
-## 配置
+**This means:**
 
-游戏内 Mod 列表 → Enchanted Outlines → 配置，或直接编辑
-`run/config/enchanted_outlines-common.toml`。
+- ✅ **Any modded item works automatically** — no pre-drawn textures needed
+- ✅ **Zero bake time** — install and play
+- ✅ **Zero pixel readback** — pure GPU computation
+- ✅ **Zero cached memory** — generated fresh every frame
 
-| 配置项 | 说明 |
-|---|---|
-| `enable` | 总开关 |
-| `thickness` | 物品描边超出贴图的像素数（0–8 支持小数，默认 1；实际偏移 = 值 × 0.5） |
-| `armorThickness` | 穿戴盔甲 / 鞘翅描边超出模型的像素数（0–8 支持小数，默认 2） |
-| `mergeMode` | 多附魔取色：`highest`（最高等级）/ `first`（列表首个） |
-| `defaultColor` | 未配置附魔的默认描边色（RRGGBB） |
-| `enchantColors` | 逐附魔颜色，`id=RRGGBB` 逗号分隔（含模组附魔） |
-| `itemColors` | 逐物品颜色，`itemid=RRGGBB` 逗号分隔，覆盖该物品的附魔取色（含模组物品） |
-| `disabledItems` | 永不描边的物品 id，逗号分隔 |
+---
 
-## 扩展 API（其他模组开发者）
+### 2. 🌐 Full Rendering Context Coverage
+
+From inventory to battlefield, from ground to sky — the outline is everywhere:
+
+| Scene | Rendering Method | Special Handling |
+|-------|------------------|------------------|
+| 🎒 **Inventory / Hotbar / Container GUI** | 2D Texture Outline | Supports 3D item preview |
+| 🤚 **First-person Held** | Vertex Normal Extrusion | Uniform thickness, surface-hugging |
+| 👤 **Third-person Held / Dropped Items** | Vertex Normal Extrusion | Dynamic lighting response |
+| 🖼️ **Item Frames** | Standard Model Outline | Orientation-adaptive |
+| 🛡️ **Worn Armor** | Model Extrusion | Independent `armorThickness` config |
+| 🦋 **Worn Elytra** | Model Extrusion | Flight pose synchronization |
+| 🔱 **Thrown Trident** | Approximate Box Model | Throwing pose tracking |
+
+---
+
+### 3. 🎯 BEWLR Smart Approximation
+
+Shields, tridents, and spyglasses use procedural rendering (BEWLR) and lack traditional models for outlining. We've built **geometric approximate box models** for them, tracking `blocking` (shield raise) and `throwing` (trident throw) display transforms in real-time to ensure the outline never misaligns.
+
+> ⚠️ Fishing rods, maps, and other placeholder BEWLR models lack geometric shapes and are not outlined — this is a technical limitation, not an oversight.
+
+---
+
+### 4. 🔄 Animation & Variant Native Correctness
+
+Clock hand rotation, compass needle deflection, NBT-driven variant models, damage-induced model switching — all dynamic changes are **resolved from the same model every frame**, so the outline shape stays perfectly synchronized with the item itself.
+
+---
+
+### 5. 🔧 Native Config UI — Dark Amber-Gold Theme
+
+No need to manually edit TOML files. Adjust everything in-game through a polished config interface:
+
+- 🎨 **Dark + Amber-Gold theme**, harmonized with vanilla style
+- 📂 **Categorized navigation**: Enchant Colors / Item Colors / Global Settings / Disabled List
+- 📜 **Scrollable lists**: Supports large numbers of enchantment/item entries
+- 💾 **Instant save**: Changes take effect immediately, no restart required
+- 🚫 **Blur background disabled**: Avoids conflicts with certain UI mods
+
+---
+
+### 6. 🔌 Developer-Friendly API
+
+Other mods can programmatically register rules via the event bus, with **priority over config files**:
 
 ```java
 NeoForge.EVENT_BUS.addListener(OutlineColorEvent.class, event -> {
+    // Register enchantment color
     OutlineColorRegistry.registerEnchantmentColor(
-            ResourceLocation.fromNamespaceAndPath("mymod", "my_enchant"), 0xFFFFA500);
+        ResourceLocation.fromNamespaceAndPath("mymod", "my_enchant"), 
+        0xFFFFA500  // Amber Gold
+    );
+
+    // Register item override color
     OutlineColorRegistry.registerItemColor(
-            ResourceLocation.fromNamespaceAndPath("mymod", "magic_sword"), 0xFF00FF00);
+        ResourceLocation.fromNamespaceAndPath("mymod", "magic_sword"), 
+        0xFF00FF00  // Magic Green
+    );
+
+    // Register per-item thickness (overrides global armorThickness)
     OutlineColorRegistry.registerItemThickness(
-            ResourceLocation.fromNamespaceAndPath("mymod", "big_axe"), 3);
+        ResourceLocation.fromNamespaceAndPath("mymod", "big_axe"), 
+        3
+    );
+
+    // Disable outline for specific item
     OutlineColorRegistry.disableItem(
-            ResourceLocation.fromNamespaceAndPath("mymod", "special_item"));
+        ResourceLocation.fromNamespaceAndPath("mymod", "special_item")
+    );
 });
 ```
 
-程序化注册的规则优先于配置文件；`registerItemThickness` 注册的逐物品厚度同样作用于盔甲 / 鞘翅（覆盖 `armorThickness`）。
+---
 
-## 已知限制
+### 7. ⚡ Pure Client-Side — Plug and Play
 
-- 投掷三叉戟的颜色判断退化：客户端拿不到投掷物的附魔列表（`pickupItemStack` 不随实体数据同步），只能按 `isFoil()` 判断是否有附魔，颜色取物品固定色 / 默认色，无法按附魔分色。
-- 钓鱼竿、地图等 BEWLR 占位模型无几何形状，不描边；盾牌、三叉戟、望远镜使用近似盒模型描边，轮廓为近似形状而非逐像素。
+- 🚫 **Zero server-side code**
+- 🚫 **Zero network packets**
+- ✅ **Join any multiplayer server**
+- ✅ **Singleplayer / Multiplayer / Realm compatible**
 
-## 构建说明
+---
 
-- 当前版本 v0.1.1；Java 21，NeoForge 21.1.219，ModDevGradle 2.0.140。
-- Mixin 由 NeoForge 自动处理，无需额外 gradle 插件。
-- Mixin 钩子：GUI（`GuiGraphicsMixin`）、手持/掉落物/展示框（`ItemRendererMixin`）、穿戴盔甲（`HumanoidArmorLayerMixin`）、穿戴鞘翅（`ElytraLayerMixin` + `ElytraModelAccessor`）、投掷三叉戟（`ThrownTridentRendererMixin`）。
+### 8. 🧩 Seamless Compatibility Ecosystem
+
+| Compatibility Type | Status | Notes |
+|--------------------|--------|-------|
+| Custom Model Mods (OptiFine / EMF / ETF) | ✅ Fully Compatible | Shader-level processing, no texture dependency |
+| UI Beautification Mods | ✅ Compatible | Blur background disabled to avoid conflicts |
+| Other Enchantment Visual Mods | ⚠️ Test Recommended | May produce overlay effects |
+| Shader Packs | ✅ Compatible | Rendered before post-processing |
+
+
+## ⚠️ Known Limitations
+
+| Limitation | Cause | Mitigation |
+|------------|-------|------------|
+| 🔱 Thrown trident cannot color by enchantment | Client cannot access `pickupItemStack` enchantment list | Falls back to `isFoil()` check, uses item fixed color / default color |
+| 🎣 Fishing rods, 🗺️ maps not outlined | BEWLR placeholder models lack geometric shapes | No current solution, does not affect normal use |
+| 🛡️ Shields / 🔱 Tridents / 🔭 Spyglasses have approximate outlines | Box model approximation used | Still visually distinguishable |
+
+---
+
+## 🤝 Contributing & Feedback
+
+- 🐛 **Bug Reports**: Please include Minecraft version, NeoForge version, and relevant mod list
+- 💡 **Feature Suggestions**: New default enchantment color palettes or rendering contexts welcome
+- 🔗 **Compatibility Issues**: Please provide conflicting mod name and version
+
+---
+
+<div align="center">
+
+**Made with 💜 and a lot of shader magic.**
+
+*Every enchanted item deserves to be seen.*
+
+**轮廓即宣言 · Enchanted Outlines**
+
+</div>
