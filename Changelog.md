@@ -4,6 +4,19 @@
 
 ## v0.1.2 (2026-08-08)
 
+### 修复: 穿戴鞘翅时描边与本体错位
+
+- 根因: 鞘翅描边 mixin 用<b>静态缓存的独立 ElytraModel 实例</b>(`cachedElytra`),
+  而 ElytraLayer 本体用<b>自己的 `this.elytraModel` 实例</b>渲染。两个实例虽然几何相同,
+  但 static 缓存跨帧/跨实体共享,姿势状态可能与本体不同步(尤其多实体同时穿戴、
+  或上一帧滑翔姿态残留时)→ 描边与本体错位。
+- 修复: 新增 `ElytraLayerAccessor` mixin(访问 ElytraLayer 私有 `elytraModel` 字段),
+  mixin 直接使用 ElytraLayer <b>正在渲染本体的同一个模型实例</b>做 copyPropertiesTo +
+  setupAnim + 描边 → 描边与本体姿势 100% 同步;移除 static `cachedElytra` 缓存。
+- 影响文件: `src/main/java/com/enchantedoutlines/mod/mixin/ElytraLayerMixin.java`,
+  `src/main/java/com/enchantedoutlines/mod/mixin/ElytraLayerAccessor.java`(新增),
+  `src/main/resources/enchanted_outlines.mixins.json`
+
 ### 修复: 配置界面长文本编辑框打开时超长配置被截断(保存即破坏配置)
 
 - 根因: `LongTextEditScreen.init()` 中先调用 `box.setValue(initial)` 再
