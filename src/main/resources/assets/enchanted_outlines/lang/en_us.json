@@ -1,0 +1,40 @@
+{
+  "enchanted_outlines.config.title": "Enchanted Outlines",
+  "enchanted_outlines.config.subtitle": "Colored outlines for enchanted items",
+  "enchanted_outlines.config.saved": "Saved to disk",
+  "enchanted_outlines.config.scroll_hint": "Scroll to see more options",
+  "enchanted_outlines.config.value.on": "ON",
+  "enchanted_outlines.config.value.off": "OFF",
+
+  "enchanted_outlines.config.category.general": "General",
+  "enchanted_outlines.config.category.colors": "Colors",
+
+  "enchanted_outlines.config.enable": "Enable Outlines",
+  "enchanted_outlines.config.enable.tooltip": "Master switch. When off, no outline is rendered anywhere.",
+
+  "enchanted_outlines.config.thickness": "Item Outline Thickness",
+  "enchanted_outlines.config.thickness.tooltip": "How many pixels the outline expands beyond the item sprite (GUI / held items / projectiles). Decimal values are allowed. 0 disables the expansion.",
+
+  "enchanted_outlines.config.armorThickness": "Armor Outline Thickness",
+  "enchanted_outlines.config.armorThickness.tooltip": "How many pixels the outline expands beyond the worn armor model. Decimal values are allowed. 0 disables the expansion.",
+
+  "enchanted_outlines.config.mergeMode": "Multi-Enchant Color",
+  "enchanted_outlines.config.mergeMode.tooltip": "When an item has several enchantments, which color wins?",
+  "enchanted_outlines.config.mergeMode.highest": "Highest level first",
+  "enchanted_outlines.config.mergeMode.first": "First in list",
+
+  "enchanted_outlines.config.defaultColor": "Default Color",
+  "enchanted_outlines.config.defaultColor.tooltip": "Hex RGB (RRGGBB) used for enchantments that have no specific color mapped. The outline is fully opaque.",
+
+  "enchanted_outlines.config.enchantColors": "Per-Enchant Colors",
+  "enchanted_outlines.config.enchantColors.tooltip": "Comma-separated map: id=RRGGBB. e.g. minecraft:sharpness=FFD700,minecraft:fire_aspect=FF6A00. Uses the default color when an enchantment is not listed.",
+
+  "enchanted_outlines.config.itemColors": "Per-Item Colors",
+  "enchanted_outlines.config.itemColors.tooltip": "Comma-separated map: itemid=RRGGBB. Overrides the enchantment color for that item; modded item ids work directly.",
+
+  "enchanted_outlines.config.disabledItems": "Disabled Items",
+  "enchanted_outlines.config.disabledItems.tooltip": "Comma-separated item ids that never get an outline, even when enchanted.",
+
+  "enchanted_outlines.config.save": "Save",
+  "enchanted_outlines.config.cancel": "Cancel"
+}

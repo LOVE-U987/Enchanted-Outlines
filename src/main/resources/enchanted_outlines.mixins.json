@@ -1,0 +1,15 @@
+{
+  "required": true,
+  "minVersion": "0.8.5",
+  "package": "com.enchantedoutlines.mod.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "GuiGraphicsMixin",
+    "HumanoidArmorLayerMixin",
+    "ItemRendererMixin",
+    "ThrownTridentRendererMixin",
+    "ElytraModelAccessor",
+    "ElytraLayerMixin"
+  ],
+  "mixins": []
+}

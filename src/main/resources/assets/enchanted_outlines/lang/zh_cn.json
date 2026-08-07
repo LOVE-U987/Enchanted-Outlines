@@ -1,0 +1,40 @@
+{
+  "enchanted_outlines.config.title": "附魔描边",
+  "enchanted_outlines.config.subtitle": "为带附魔的物品渲染彩色轮廓",
+  "enchanted_outlines.config.saved": "已保存到磁盘",
+  "enchanted_outlines.config.scroll_hint": "滚动查看更多选项",
+  "enchanted_outlines.config.value.on": "开启",
+  "enchanted_outlines.config.value.off": "关闭",
+
+  "enchanted_outlines.config.category.general": "通用",
+  "enchanted_outlines.config.category.colors": "颜色",
+
+  "enchanted_outlines.config.enable": "启用描边",
+  "enchanted_outlines.config.enable.tooltip": "总开关。关闭后任何界面都不再渲染描边。",
+
+  "enchanted_outlines.config.thickness": "物品描边厚度",
+  "enchanted_outlines.config.thickness.tooltip": "物品（GUI/手持/投掷物）描边超出贴图的像素数，支持小数。设为 0 可关闭描边扩张。",
+
+  "enchanted_outlines.config.armorThickness": "盔甲描边厚度",
+  "enchanted_outlines.config.armorThickness.tooltip": "盔甲描边超出模型的像素数，支持小数。设为 0 可关闭盔甲描边扩张。",
+
+  "enchanted_outlines.config.mergeMode": "多附魔取色",
+  "enchanted_outlines.config.mergeMode.tooltip": "当一件物品带有多个附魔时,以哪个附魔的颜色为准?",
+  "enchanted_outlines.config.mergeMode.highest": "最高等级优先",
+  "enchanted_outlines.config.mergeMode.first": "列表首个优先",
+
+  "enchanted_outlines.config.defaultColor": "默认颜色",
+  "enchanted_outlines.config.defaultColor.tooltip": "未单独配置颜色的附魔所用的十六进制 RGB(RRGGBB)。描边完全不透明。",
+
+  "enchanted_outlines.config.enchantColors": "逐附魔颜色",
+  "enchanted_outlines.config.enchantColors.tooltip": "逗号分隔的映射:id=RRGGBB。例如 minecraft:sharpness=FFD700,minecraft:fire_aspect=FF6A00。未列出的附魔使用默认颜色。",
+
+  "enchanted_outlines.config.itemColors": "逐物品颜色",
+  "enchanted_outlines.config.itemColors.tooltip": "逗号分隔的映射:itemid=RRGGBB。覆盖该物品的附魔取色,模组物品 id 直接可用。",
+
+  "enchanted_outlines.config.disabledItems": "禁用物品",
+  "enchanted_outlines.config.disabledItems.tooltip": "逗号分隔的物品 id 列表,这些物品即使带附魔也不描边。",
+
+  "enchanted_outlines.config.save": "保存",
+  "enchanted_outlines.config.cancel": "取消"
+}
