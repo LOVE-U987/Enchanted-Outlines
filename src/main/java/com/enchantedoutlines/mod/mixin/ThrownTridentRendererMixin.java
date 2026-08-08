@@ -42,13 +42,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(ThrownTridentRenderer.class)
 public abstract class ThrownTridentRendererMixin {
 
-    /** 一次性日志:确认投掷物描边路径被触发(避免每帧刷屏)。 */
-    @Unique
-    private static boolean tridentLogged = false;
-
     /** 缓存的烘焙三叉戟模型根(EntityModelSet.bakeLayer 每次调用都会新建 ModelPart 树,缓存避免每帧分配)。 */
     @Unique
-    private static ModelPart cachedTridentRoot;
+    private ModelPart cachedTridentRoot;
 
     @Inject(method = "render(Lnet/minecraft/world/entity/projectile/ThrownTrident;FFLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;I)V",
             at = @At("HEAD"))
@@ -57,10 +53,6 @@ public abstract class ThrownTridentRendererMixin {
                                                         CallbackInfo ci) {
         if (!Config.ENABLE.get() || !trident.isFoil()) {
             return;
-        }
-        if (!tridentLogged) {
-            tridentLogged = true;
-            EnchantedOutlines.LOGGER.info("ThrownTrident outline mixin fired (entity={}, foil=true).", trident.getId());
         }
         ItemStack stack = trident.getPickupItemStackOrigin();
         if (stack.isEmpty()) {

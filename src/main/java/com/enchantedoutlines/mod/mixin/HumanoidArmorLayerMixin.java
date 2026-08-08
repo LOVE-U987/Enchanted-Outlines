@@ -32,26 +32,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(HumanoidArmorLayer.class)
 public abstract class HumanoidArmorLayerMixin {
 
-    /** 一次性日志:确认盔甲描边路径被触发(避免每帧刷屏)。 */
-    private static boolean armorLogged = false;
-    /** 一次性日志:确认盔甲层 render 入口被调用(诊断用)。 */
-    private static boolean armorRenderLogged = false;
-
-    /**
-     * NeoForge 21.1.219 patched 的 HumanoidArmorLayer 中,render 的参数是
-     * (PoseStack, MultiBufferSource, int, LivingEntity, float×6)——只有 6 个 float。
-     */
-    @Inject(method = "render(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILnet/minecraft/world/entity/LivingEntity;FFFFFF)V",
-            at = @At("HEAD"))
-    private void enchantedoutlines$armorLayerRender(PoseStack pose, MultiBufferSource buffers, int light,
-                                                    LivingEntity entity, float a, float b, float c,
-                                                    float d, float e, float f, CallbackInfo ci) {
-        if (!armorRenderLogged) {
-            armorRenderLogged = true;
-            EnchantedOutlines.LOGGER.info("HumanoidArmorLayer.render fired (entity={}).", entity.getType());
-        }
-    }
-
     /**
      * NeoForge 把 render 改为直接调用 12 参 renderArmorPiece(6 参旧重载已 @Deprecated
      * 且运行时不再被调用)。必须注入 12 参版本,否则永远不会触发:
@@ -68,10 +48,6 @@ public abstract class HumanoidArmorLayerMixin {
         if (!Config.ENABLE.get()) {
             return;
         }
-        if (!armorLogged) {
-            armorLogged = true;
-            EnchantedOutlines.LOGGER.info("Armor mixin fired (entity={}, slot={}).", entity.getType(), slot);
-        }
         ItemStack stack = entity.getItemBySlot(slot);
         if (!(stack.getItem() instanceof ArmorItem armorItem)) {
             return;
@@ -81,8 +57,6 @@ public abstract class HumanoidArmorLayerMixin {
         }
         int color = ColorResolver.resolve(stack);
         if (color == -1) {
-            EnchantedOutlines.LOGGER.info("Armor item not enchanted (slot={}, item={}); no outline.",
-                    slot, stack.getItem());
             return;
         }
         float thickness = ColorResolver.armorThickness(stack);
@@ -105,7 +79,5 @@ public abstract class HumanoidArmorLayerMixin {
         parent.copyPropertiesTo(armorModel);
 
         OutlineRenderer.INSTANCE.renderArmorOutline(pose, armorModel, texture, color, thickness, slot);
-        EnchantedOutlines.LOGGER.info("Armor outline rendered (slot={}, color=#{}, thickness={}).",
-                slot, Integer.toHexString(color), thickness);
     }
 }

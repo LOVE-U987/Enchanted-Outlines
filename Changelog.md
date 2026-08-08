@@ -2,133 +2,159 @@
 
 ---
 
-## v0.1.2 (2026-08-08)
+## v0.1.3 (2026-08-08)
 
-### 修复: 穿戴鞘翅时描边与本体错位
+### 文档: 关键代码区域写入防呆注释(AGENTS.md 铁律内联)
 
-- 根因: 鞘翅描边 mixin 用<b>静态缓存的独立 ElytraModel 实例</b>(`cachedElytra`),
-  而 ElytraLayer 本体用<b>自己的 `this.elytraModel` 实例</b>渲染。两个实例虽然几何相同,
-  但 static 缓存跨帧/跨实体共享,姿势状态可能与本体不同步(尤其多实体同时穿戴、
-  或上一帧滑翔姿态残留时)→ 描边与本体错位。
-- 修复: 新增 `ElytraLayerAccessor` mixin(访问 ElytraLayer 私有 `elytraModel` 字段),
-  mixin 直接使用 ElytraLayer <b>正在渲染本体的同一个模型实例</b>做 copyPropertiesTo +
-  setupAnim + 描边 → 描边与本体姿势 100% 同步;移除 static `cachedElytra` 缓存。
-- 影响文件: `src/main/java/com/enchantedoutlines/mod/mixin/ElytraLayerMixin.java`,
-  `src/main/java/com/enchantedoutlines/mod/mixin/ElytraLayerAccessor.java`(新增),
-  `src/main/resources/enchanted_outlines.mixins.json`
-
-### 修复: 配置界面长文本编辑框打开时超长配置被截断(保存即破坏配置)
-
-- 根因: `LongTextEditScreen.init()` 中先调用 `box.setValue(initial)` 再
-  `box.setMaxLength(4096)`,`EditBox#setValue` 会按**当前** maxLength(默认 32)截断字符串,
-  而 `enchantColors` 等默认配置远超 32 字符 → 打开编辑框内容即被截断为前 32 字符,保存后配置丢失大部分映射。
-- 修复: 先 `setMaxLength` 再 `setValue`,并将长文本上限从 4096 提高到 16384
-  (容纳数百个附魔/物品映射;`EnchantedConfigScreen.java`)。
-- 顺带完善: 颜色输入框(默认色)限制为 7 位(`#RRGGBB` 最长)、数值输入框(厚度)限制为 10 位,
-  避免粘贴超长字符串(`EnchantedConfigScreen.java` 的 `addColorRow` / `addDoubleRow`)。
-
-
-### 修复: 光影(Iris / Oculus)下世界渲染描边透明、颜色丢失、丢失发光、盾/三叉戟反射方块纹理
-
-- 根因: Iris 默认配置 `allowUnknownShaders=false` 且光影激活时,自定义 core shader
-  (`enchanted_outlines:outline`)被 Iris 的 `iris$shouldSkipThis` 判定为"未知 shader"
-  → <b>绘制被完全跳过</b>,描边被渲染为透明。GUI 渲染不经光影,故背包内描边正常、世界内消失。
-- 修复: `OutlineRenderer` 改为<b>运行时检测光影状态</b>(反射调用
-  `IrisApi.getInstance().isShaderPackInUse()` 与 `IrisConfig.shouldAllowUnknownShaders()`,
-  不依赖 Iris 编译期、也不按"是否安装"静态判断——装了 Iris 但没开光影包时行为完全不变):
-  - 光影<b>未激活</b>或已开启 iris.properties 的 allowUnknownShaders → 继续用自定义描边
-    shader(alpha boost / cutout / 发光全保留,与无光影一致);
-  - 光影激活且不允许未知 shader(默认)→ 世界渲染路径改用内置 <b>`entity_translucent_emissive`</b>
-    shader 构造的 RenderType(不乘 lightmap → 描边全亮发光,不再被光影重写光照而变暗):
-    - 盾牌/三叉戟近似盒模型 → 采样 <b>纯白纹理</b>(新增
-      `assets/enchanted_outlines/textures/white.png`):独立纹理(非方块图集)不触发
-      Iris 的方块材质反查 → 消除"盾/三叉戟反射四周方块纹理",颜色纯正;
-    - 扁平物品(剑/弓/工具)→ 保留 BLOCK_SHEET(物品贴图 alpha 遮罩决定形状),
-      颜色 = 描边色 × 物品贴图像素色(混合,见下方新配置项);
-    - 物品展示框在光影 fallback 下统一半透明发光(不再硬切不透明)。
-  - 全部保留 `COLOR_WRITE`(不写深度)+ `LEQUAL` 深度测试 + `NO_CULL`,顶点几何不变。
-
-### 新增: 配置项 `itemPixelColorGlint`(默认 true)
-
-- 功能: "附魔光效根据物品每个像素的颜色确定" —— 光影兼容模式下,扁平物品描边色与
-  物品贴图每个像素的颜色混合(如红色描边在钻石剑上呈黄绿色),混合出的颜色独特有趣。
-- true(默认): 保留物品贴图形状(轮廓贴合物品),接受颜色混合;
-- false: 描边为<b>纯描边色且保留物品形状</b>(见下方"关闭混色不再矩形"的说明)。
-- 无光影 / 已开启 Iris 的 allowUnknownShaders 时,自定义 shader 可分离形状与颜色,
-  描边始终为纯色,本配置不影响。
-- 配置界面「通用」分类新增该开关,可即时保存。
-
-### 扩展: `itemPixelColorGlint` 覆盖 3D 物品(手持/掉落物/展示框的方块等)
-
-- 之前 3D 物品在光影 fallback 下恒采样纯白纹理(纯描边色,无混色选项);现在
-  <b>3D 物品也受 `itemPixelColorGlint` 控制</b>:开混色 → 采样 BLOCK_SHEET
-  (方块贴图颜色 × 描边色);关混色 → 纯白(纯描边色)。形状均由几何外扩决定,
-  不随纹理变化 → 关闭混色形状不退化。
-- 盾牌/三叉戟<b>近似盒模型</b>例外:其全部 quads 用 stone 精灵,采样 BLOCK_SHEET
-  会被 Iris 误判为方块材质(反射方块纹理)且 stone 灰把描边色染暗 →
-  <b>恒为纯白纯色</b>(新增 `usesOnlyStoneSprite` 判断)。
-- 至此所有世界渲染路径统一为"外层几何算法不变 + 纹理/颜色来源切换":
-  - 扁平物品:混色开=BLOCK_SHEET(形状+混色),混色关=形状纹理(形状+纯色);
-  - 3D 物品:混色开=BLOCK_SHEET(几何形状+混色),混色关=纯白(几何形状+纯色);
-  - 盾牌/三叉戟盒:恒纯白(几何形状+纯色);
-  - 盔甲/鞘翅/投掷物:混色开=原纹理(镂空+混色),混色关=形状纹理(镂空+纯色)。
-
-### 新增: 配置项 `armorPixelColorGlint`(默认 true)
-
-- 功能: 盔甲/鞘翅/投掷物实体的描边是否与纹理颜色混合(光影兼容模式下):
-  - true(默认): 采样原纹理(armor / elytra / trident 材质)的 alpha 遮罩,形状贴合
-    单层纹理镂空,颜色与纹理混合;
-  - false: 描边为纯描边色(形状由模型几何决定,不再贴合纹理镂空)。
-- 配置界面「通用」分类新增该开关,可即时保存。
-
-### 修复: 关闭混色后扁平物品不再变成矩形
-
-- 根因: 内置 fsh 是 `texel × vertexColor`,单纹理采样无法分离"形状(alpha)"与
-  "颜色(RGB)";关闭混色改采样纯白纹理 → 形状丢失变矩形。
-- 修复: 新增<b>"描边色形状纹理"</b>:关闭混色时,CPU 读取物品贴图原图
-  (`SpriteContents.originalImage`,内存像素非 GPU 回读)生成一张 RGB=描边色、
-  A=原 alpha 的动态纹理(缓存到 TextureManager,资源重载自动销毁),顶点 UV 从
-  atlas 绝对坐标重映射为 sprite 相对坐标 → 输出 = <b>纯描边色 × 物品形状</b>。
-  - 首次渲染某 (物品, 颜色) 组合有一次性的像素处理开销(毫秒级),之后缓存复用;
-  - 读取失败(反射异常等)自动回退纯白矩形,保证描边仍可见。
-
-### 调整: 光影兼容下盔甲/鞘翅/投掷物描边恢复原算法(仅加发光)
-
-- 上一版把盔甲/鞘翅/投掷物(独立纹理实心模型)在光影 fallback 下改为纯白纹理,
-  导致轮廓形状不再贴合单层纹理的镂空。现改回:<b>算法与原来相同</b>(仍采样
-  armor / elytra / trident 纹理的 alpha 遮罩贴合形状),仅把 translucent 换成
-  emissive(不乘 lightmap → 加发光);是否混色由 `armorPixelColorGlint` 控制。
-- 特殊附魔颜色(配置映射):与普通附魔统一,一律按混色开关走(开=混色,关=纯色形状),
-  不再出现"特殊色与混色不一致"的现象。
-
-### 重构: 盔甲/鞘翅/投掷物描边"外层算法统一"
-
-- 之前盔甲关闭混色时采样纯白纹理 → 形状从"贴合纹理镂空"变成"实心盒子外扩",
-  算法表现不一致。现统一:
-  - <b>外层几何算法(renderPartInflated 逐 cube 放大壳)始终是同一个</b>,三种模式
-    (自定义 shader / 光影混色开 / 光影混色关)只切换"采样纹理";
-  - 光影混色关 → 复用<b>描边色形状纹理</b>方案(新增
-    `shapeTextureForLocation`,从 ResourceManager 读取盔甲/鞘翅/三叉戟纹理 PNG,
-    生成 RGB=描边色、A=原 alpha 的纹理)→ 形状与混色开时完全一致,仅颜色为纯描边色;
-  - 扁平物品与盔甲的形状纹理生成逻辑抽为统一入口 `shapeTexture(source, src, color)`。
-- 影响文件: `src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java`,
-  `src/main/java/com/enchantedoutlines/mod/config/Config.java`,
-  `src/main/java/com/enchantedoutlines/mod/config/EnchantedConfigScreen.java`,
-  `src/main/resources/assets/enchanted_outlines/lang/zh_cn.json`,
-  `src/main/resources/assets/enchanted_outlines/lang/en_us.json`
-- 测试环境: iris-neoforge 1.8.12 + sodium 0.6.13 (NeoForge 1.21.1)
+- 目的: 把仓库根目录 `AGENTS.md` 的渲染架构铁律<b>内联到代码事故点</b>,
+  任何 AI/开发者阅读或修改这些区域时立即看到警示,避免重蹈 v0.1.5/v0.1.6 覆辙。
+- 覆盖位置(`OutlineRenderer.java`,共 19 处 ⚠️ 注释):
+  - 类头 Javadoc:渲染架构铁律总览(ImageIO 读取 / 亮度归一化 / 统一轮廓设计);
+  - `shapeTextureForLocation`:ImageIO 而非 NativeImage.read 的铁律(palette+tRNS);
+  - `averageLuma` / `exposureScale` / `darkenByLuma` / `lumaOf`:亮度必须 0..1 归一化,
+    scale 溢出破坏颜色;失败返回 -1 只"不压暗"绝不中断形状生成;
+  - `spriteOriginalImage`:沿父类链查找 + 按类缓存(getDeclaredField 会 NoSuchFieldException);
+  - NativeImage 像素读写:ABGR 打包方向警示(两处);
+  - `ModelGeometry` / `collectQuads`:几何缓存纪律(只缓存帧无关输入,热路径勿重算);
+  - `renderHandOutline` / `renderFlatPureColorShape` / `armorOutlineRenderType`:
+    统一轮廓算法不可拆分(扁平=形状纹理、3D=几何外扩、盔甲=逐 cube 放大壳);
+  - `needVanillaShaderFallback`:热路径 500ms 反射缓存说明。
+- 纯注释改动,无任何逻辑变更;`compileJava` 验证通过。
+- 影响文件: `src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java`
 
 ---
 
-## v0.1.1 (2026-08-08)
 
-### 修复: 背包中附魔物品出现"格子大小"的原版附魔光效闪动
 
-- 根因: GUI 扁平物品描边 RenderType(`enchanted_outlines_outline`)使用 `COLOR_DEPTH_WRITE`(写深度)。
-  描边画的是整张 16×16 平面 quad,而 GL 深度写入与 alpha 无关 → 物品贴图透明(alpha=0)区域同样
-  写入了深度;原版附魔光效(glint)用 `EQUAL_DEPTH_TEST` 只在物品本体写入深度的像素上显示,
-  描边写掉的格子背景深度让 glint 在整个槽位通过深度测试 → 出现"格子大小的原版附魔光效闪动"。
-- 修复: `OutlineRenderer.outlineRenderType()` 写掩码由 `COLOR_DEPTH_WRITE` 改为 `COLOR_WRITE`
-  (只写颜色不写深度),与 GUI 3D 路径 `handOutlineRenderType` 一致;描边在物品本体之前绘制、
-  本体随后覆盖中心,描边无需写深度,glint 恢复只沿物品形状显示。
+### 优化: 渲染热路径去除重复计算(Uniform/法线/矩阵/临时对象)
+
+- **Uniform 引用缓存**:`setOutlineAlphaBoost` / `setOutlineCutout` 改为在
+  `setOutlineShader` 时缓存 `Uniform` 引用(资源重载时随 shader 刷新),消除
+  GUI 每格每帧 2 次 `getUniform` 字符串查找。
+- **复用缓存的 quad 法线**:扁平物品 8 方向循环里,每个 quad 原每方向调一次
+  `safeQuadNormal`(null direction 时做叉积+sqrt);现在 `emitQuad` /
+  `emitQuadShape` 直接接收 `ModelGeometry.expandNormals` 缓存的法线,8 方向
+  只算一次。
+- **GUI 扁平路径矩阵链提出循环**:`scale(16)` + `display transform` + `居中`
+  是方向无关的基础变换,原每方向重复构建;现在只应用一次,每方向仅做一次
+  平移(模型空间偏移 = 像素/16,数学等价)。8 方向 × 64 格省 7/8 的矩阵乘法。
+- **sprite → quad 索引缓存**:`ModelGeometry` 新增 `spriteQuadIndices`
+  (构建时一次算好),`renderFlatPureColorShape` 按索引取法线,消除每帧 `indexOf`。
+- **`renderPartInflated` 复用 Matrix4f**:盔甲逐 cube 放大壳不再每 cube 新建
+  3 个 Matrix4f,改用复用的 `original` / `transform` 临时对象。
+- **`needVanillaShaderFallback()` 局部变量化**:`renderHandOutline` 只调一次,
+  不再两次触发(反射检测已有 500ms 缓存,此为消除重复调用)。
+- **移除每帧刷屏的调试日志**:`HumanoidArmorLayerMixin` 的 "Armor outline rendered"
+  与 "Armor item not enchanted" 每帧每槽位打印(实测单次运行产生 **28.9 万行**
+  日志),`ThrownTridentRendererMixin` 的一次性日志一并清理 —— 消除每帧字符串
+  格式化 + I/O 开销,且不再掩盖真实日志。`cachedTridentRoot` 由 static 改为
+  实例字段(资源重载后随渲染器重建)。
+- **实测验证(2026-08-08 游戏实跑)**:清理前单次运行日志 **289,921 行**(其中
+  "Armor outline rendered" 刷屏 **289,687 次**,占 99.9%+);清理后日志 **212 行**、
+  刷屏归零,描边渲染功能正常(无 ShapeDiag / WHITE fallback / ImageIO 异常)。
+- 影响文件: `src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java`,
+  `src/main/java/com/enchantedoutlines/mod/mixin/HumanoidArmorLayerMixin.java`,
+  `src/main/java/com/enchantedoutlines/mod/mixin/ThrownTridentRendererMixin.java`
+
+### 修复: 光影兼容下盔甲/鞘翅描边仍为实心立方体(palette+tRNS PNG 透明丢失)
+
+- 现象: 开启光影 + 关闭混色时,穿戴的盔甲、手持鞘翅描边为实心立方体;剑等
+  扁平物品也有异常。斧头正常(走 atlas 精灵路径,alpha 正确)。
+- 根因(两个叠加的 bug):
+  1. **`NativeImage.read(InputStream)` 丢失 palette(索引色)+ tRNS 透明**:
+     原版盔甲 `diamond_layer_1.png` 是 palette+tRNS(69% 透明像素),但
+     `NativeImage.read` 解码后全像素 alpha=255 → 形状纹理 100% 实心 → 描边
+     变实心立方体。斧头走 `spriteOriginalImage`(atlas 精灵原图,Mojang 已
+     正确解码 alpha)→ 正常,这解释了"只有斧头正常"。
+  2. **`averageLuma` 忘记归一化**:Rec.601 加权平均后未 ÷255,导致
+     `exposureScale` 输出 `scale≈55~113`(应为 0.35~1.0),RGB 乘巨大值后溢出
+     32 位 int → 描边颜色完全错乱。
+- 修复:
+  - `shapeTextureForLocation` 改用 **JDK `ImageIO`** 读取 PNG(正确展开
+    palette 的 tRNS 为 alpha),逐像素 `getRGB` 转 ABGR 写入 NativeImage;
+  - `averageLuma` 归一化到 0..1(`÷255`);
+  - 形状纹理生成链全部异常安全(亮度读取失败只不压暗,绝不中断/回退纯白矩形)。
+- 清理: 移除排查用的临时测试钩子(`EnchantedOutlinesClient`)与 ShapeDiag 诊断日志。
+- 影响文件: `src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java`,
+  `src/main/java/com/enchantedoutlines/mod/EnchantedOutlinesClient.java`,
+  `src/main/java/com/enchantedoutlines/mod/mixin/ItemRendererMixin.java`
+- 新增项目规则: 仓库根目录 `AGENTS.md`,记录本次事故教训(ImageIO 读取、
+  亮度归一化、统一轮廓算法不可拆分、临时诊断代码必须清理等)。
+
+---
+
+
+### 修复: 关闭混色(非混合模式)时描边可能退化为实心矩形(正方形)
+
+- 现象: 关混色(`itemPixelColorGlint` / `armorPixelColorGlint` = false)时,
+  扁平物品(剑/工具)与盔甲的描边丢失物品轮廓,变成实心矩形/立方体。
+- 根因: v0.1.3 在形状纹理生成链(`shapeTexture`)中新增了<b>平均亮度</b>计算
+  (`averageLuma` → `NativeImage.getPixelRGBA`)用于压暗曝光。`getPixelRGBA`
+  在贴图格式非 RGBA(如 RGB 无 alpha 的模组盔甲材质)时抛异常:
+  - 盔甲路径 `shapeTextureForLocation` 捕获异常 → 回退纯白纹理(实心立方体);
+  - 扁平物品路径 `shapeTextureFor` 无捕获 → 异常向上传播,描边渲染中断;
+  - `ModelGeometry` 构造里的 `mainSpriteLuma` 同样可能抛,导致几何缓存构建失败。
+- 修复(全部异常安全,任何亮度读取失败<b>绝不</b>中断或改变形状纹理生成):
+  - `lumaOf` / `mainSpriteLuma` 对 `averageLuma` 包 try-catch,失败 → 不压暗(-1);
+  - `shapeTexture` 像素循环包 try-catch,格式不支持时回退纯白矩形(与 v0.1.2 一致);
+  - `spriteOriginalImage` 反射改为<b>沿父类链查找</b> + 按类缓存 —— SpriteContents
+    子类不直接声明 `originalImage` 字段,原 `getDeclaredField` 会失败并回退纯白矩形;
+    现在子类也能读到贴图 alpha,减少"正方形"回退。
+- 形状算法本身(扁平=形状纹理、3D=几何外扩、盔甲=逐 cube 放大壳)保持 v0.1.2 的
+  统一设计未变。
 - 影响文件: `src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java`
+
+---
+
+### 优化: 渲染热路径去除反射与重复遍历
+
+- `needVanillaShaderFallback()`(每帧每格/每槽位调用)改为<b>按 500ms 时间间隔缓存</b>
+  光影检测结果:每次渲染不再做两次反射 invoke,Iris 光影包切换最多延迟半秒生效。
+- `spriteOriginalImage` 反射的 `originalImage` 字段改为<b>静态缓存</b>,避免每次
+  `getDeclaredField` 类遍历。
+- 关闭混色时,同一贴图的不同描边色会各生成一张形状纹理——平均亮度按源贴图
+  location 缓存(`lumaCache`),避免对同一张图反复遍历像素;资源重载时一并清空。
+- `usesOnlyStoneSprite`(盾牌/三叉戟盒模型判断)结果缓存进模型几何缓存,
+  不再每帧遍历 quads。
+- 影响文件: `src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java`
+
+### 修复: 配置界面修改后解析缓存不失效,改动不生效
+
+- 根因: `Config` 的解析缓存(默认色/逐附魔色/逐物品色/禁用列表)只在
+  `ModConfigEvent`(重启/F3+T 重载)时通过 `invalidateCache()` 失效;配置界面的
+  `markChanged()` 只调用了 `Config.save()` 写盘,<b>未触发缓存失效</b> → 界面里改的
+  颜色/开关不生效,直到重启或资源重载。
+- 修复: `markChanged()` 在保存后同步调用 `Config.invalidateCache()`。
+- 影响文件: `src/main/java/com/enchantedoutlines/mod/config/EnchantedConfigScreen.java`
+
+---
+
+
+### 优化: 渲染几何按 BakedModel 缓存,消除每帧重复计算
+
+- 根因: `collectQuads`(含 `RandomSource.create()` + 7 个方向遍历)与顶点法线平均外扩
+  (`renderVertexNormalExpand` 的 HashMap 累积 + 归一化)在**每次渲染**都重复执行:
+  GUI 中同一物品 64 格 → 每帧 64 次全模型遍历 + 64 次法线哈希;手持/3D 物品每帧同样重复。
+- 修复: 新增按 `BakedModel` 实例的几何缓存(`WeakHashMap`):
+  - `collectQuads` 结果(quads)只算一次,同物品多格/多帧共享;
+  - 顶点法线平均外扩的**预处理**(顶点坐标 + 归一化平均法线方向 + 每 quad 面法线)
+    只算一次,帧内只做矩阵变换与顶点写入,不再分配 HashMap / 顶点对象;
+  - 按 sprite 分组、主 sprite 平均亮度一并缓存。
+  - 资源重载(F3+T)后模型是全新实例,弱引用自动回收,无需手动清理。
+- 影响文件: `src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java`
+
+### 修复: 关闭混色(纯色描边)时描边曝光严重
+
+- 根因: 混色开启时描边 = 描边色 × 物品贴图像素色,暗色贴图天然压暗亮度;
+  关闭混色后描边为**纯色**,在光影兼容的 emissive 全亮渲染下,亮色描边
+  (粉/金/白)在明亮场景中严重过曝刺眼——纯色路径缺少"物体颜色调亮"这层调制。
+- 修复: 纯色描边按物品贴图的**平均感知亮度**(Rec.601 × alpha 加权,一次计算并缓存)
+  压暗 RGB(色相不变):映射 `0.35 + 0.65 × luma`,暗色物品(铁剑等)描边显著变暗、
+  亮色物品(金苹果等)基本不变——模拟"混合算法根据物体颜色降低曝光亮度"的效果。
+  覆盖三条纯色路径:扁平物品/盔甲"描边色形状纹理"烘焙、3D 物品纯白 × vertexColor。
+- 新增配置项 `outlineExposureReduce`(默认 true,COMMON 配置文件,
+  键名 `outlineExposureReduce`):true = 按物体颜色压暗曝光;false = 保持原始亮度。
+  配置界面「通用」分类新增该开关,可即时保存。
+- 影响文件: `OutlineRenderer.java`、`Config.java`、`EnchantedConfigScreen.java`、
+  `assets/enchanted_outlines/lang/zh_cn.json`、`assets/enchanted_outlines/lang/en_us.json`
+

@@ -94,6 +94,23 @@ public final class Config {
                     "false = 描边为纯描边色(形状由模型几何决定)。")
             .define("armorPixelColorGlint", true);
 
+    /**
+     * 关闭混色(纯色描边)时是否按物体颜色降低曝光亮度(仅光影兼容模式下生效)。
+     * <p>
+     * 混色开启时描边 = 描边色 × 物品贴图像素色,物品贴图多为暗/中性色 → 描边被
+     * 天然压暗("根据物体颜色降低曝光亮度")。关闭混色后描边为纯色,emissive 全亮
+     * 渲染下亮色描边(粉/金/白)在明亮场景中严重过曝刺眼。
+     * 开启本项:纯色描边按物品贴图的<b>平均感知亮度</b>压暗 RGB(色相不变):
+     * 暗色物品(铁剑等)描边显著变暗,亮色物品(金苹果等)基本不变;
+     * 关闭本项:纯色描边保持原始亮度(可能出现曝光)。
+     */
+    public static final ModConfigSpec.BooleanValue OUTLINE_EXPOSURE_REDUCE = BUILDER
+            .comment("Reduce pure-color outline exposure by the item color (shader-compat mode only).",
+                    "关闭'附魔光效混合物品颜色'时,描边为纯色且 emissive 全亮,亮色描边在明亮场景下会过曝刺眼。",
+                    "true = 纯色描边按物品贴图平均亮度压暗(暗色物品的描边显著变暗,亮色物品基本不变),色相不变;",
+                    "false = 纯色描边保持原始亮度。")
+            .define("outlineExposureReduce", true);
+
     // ==================== 颜色 ====================
 
     /** 默认描边色 */

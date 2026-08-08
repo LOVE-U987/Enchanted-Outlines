@@ -6,7 +6,9 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.WeakHashMap;
 
+import com.enchantedoutlines.mod.EnchantedOutlines;
 import com.enchantedoutlines.mod.config.Config;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.shaders.Uniform;
@@ -63,6 +65,17 @@ import org.joml.Vector3f;
  * </ul>
  * <b>已知限制:</b>BEWLR 自定义渲染物品(盾牌、三叉戟、望远镜已用近似模型支持;
  * 钓鱼竿、地图等占位模型无形状)暂不描边。
+ * <p>
+ * ⚠️ <b>渲染架构铁律(违反即产生"正方形/立方体"描边 bug,详见仓库根目录 AGENTS.md):</b>
+ * <ol>
+ *   <li>独立纹理 PNG 读取一律用 {@code javax.imageio.ImageIO}(见
+ *       {@link #shapeTextureForLocation})——palette(索引色)+ tRNS 透明贴图被
+ *       {@code NativeImage.read} 读取会<b>丢失 alpha</b>,描边变实心立方体;</li>
+ *   <li>亮度统计输出必须归一化到 0..1(÷255,见 {@link #averageLuma}),否则
+ *       {@link #exposureScale} 算出 scale≈113 使 RGB 溢出 int,颜色完全错乱;</li>
+ *   <li>形状算法是"统一轮廓"设计(扁平=形状纹理 / 3D=几何外扩 / 盔甲=逐 cube
+ *       放大壳),任何优化不得改变其形状来源与几何语义。</li>
+ * </ol>
  */
 public final class OutlineRenderer {
 
@@ -118,6 +131,15 @@ public final class OutlineRenderer {
     private volatile ShaderInstance outlineShader;
 
     /**
+     * 描边着色器的 alpha 强化 Uniform 引用(缓存,避免每帧每格重复字符串查找)。
+     * 资源重载(F3+T)时随 {@link #setOutlineShader} 一起更新。
+     */
+    private volatile Uniform outlineAlphaBoostUniform;
+
+    /** 描边着色器的硬切不透明 Uniform 引用(缓存,避免每帧每格重复字符串查找)。 */
+    private volatile Uniform outlineCutoutUniform;
+
+    /**
      * 描边专用缓冲源。独立于 GuiGraphics.bufferSource(),渲染完立即 endBatch →
      * 描边一定在物品本体之前绘制,不依赖共享 BufferSource 的遍历顺序。
      */
@@ -142,8 +164,23 @@ public final class OutlineRenderer {
      */
     private final Map<ShapeKey, ResourceLocation> shapeTextures = new HashMap<>();
 
-    /** 形状纹理缓存键:物品贴图 + 描边色(RGB)。 */
-    private record ShapeKey(ResourceLocation spriteName, int color) {
+    /**
+     * 源贴图 location → 平均感知亮度缓存(关闭混色时按物体颜色压暗曝光用)。
+     * 同一贴图的不同描边色会各自生成形状纹理,亮度只依赖贴图内容 → 按 location
+     * 缓存避免对同一张图反复遍历像素。资源重载(F3+T)时随 {@link #setOutlineShader}
+     * 一起清空,贴图文件变更后重算。
+     */
+    private final Map<ResourceLocation, Float> lumaCache = new HashMap<>();
+
+    /**
+     * 模型几何缓存(WeakHashMap,键为 BakedModel 实例)。BakedModel 烘焙后不可变 →
+     * quads / 法线外扩预处理 / 平均亮度一次性计算,帧间直接复用。
+     * 资源重载(F3+T)后模型是全新实例,旧条目随弱引用自动回收,无需手动清理。
+     */
+    private final Map<BakedModel, ModelGeometry> modelGeometryCache = new WeakHashMap<>();
+
+    /** 形状纹理缓存键:物品贴图 + 描边色(RGB) + 是否压暗曝光(开关切换时缓存失效)。 */
+    private record ShapeKey(ResourceLocation spriteName, int color, boolean reduceExposure) {
     }
 
     /** 三叉戟实体纹理(投掷物 ThrownTrident 的模型材质)。 */
@@ -187,9 +224,20 @@ public final class OutlineRenderer {
      *       (见 {@link #worldEmissiveOutlineRenderType()})。</li>
      * </ul>
      * GUI 渲染不经光影,始终用自定义 shader。
+     * <p>
+     * ⚠️ 本方法是<b>渲染热路径</b>(每帧每格/每槽位调用),结果按 500ms 间隔缓存:
+     * 不要改成每次实时反射检测(两次 invoke 开销大);切换光影包最多延迟半秒生效,
+     * 可接受(AGENTS.md #5)。
      */
     private boolean needVanillaShaderFallback() {
-        return isShaderPackInUse() && !isUnknownShadersAllowed();
+        // 渲染热路径(每帧每格调用):反射检测有真实开销,按时间间隔缓存结果。
+        // Iris 光影包切换不频繁,500ms 刷新一次即可;切换后最多延迟半秒生效。
+        long now = System.currentTimeMillis();
+        if (now - lastShaderStateCheck >= SHADER_STATE_REFRESH_MS) {
+            cachedNeedVanillaShaderFallback = isShaderPackInUse() && !isUnknownShadersAllowed();
+            lastShaderStateCheck = now;
+        }
+        return cachedNeedVanillaShaderFallback;
     }
 
     /** 反射缓存的 IrisApi 单例(无 Iris 时为 null)。 */
@@ -205,6 +253,21 @@ public final class OutlineRenderer {
     /** 反射缓存的 IrisConfig.shouldAllowUnknownShaders(无 Iris 时为 null)。 */
     private static final java.lang.reflect.Method IRIS_SHOULD_ALLOW_UNKNOWN_SHADERS =
             resolveIrisUnknownShadersMethod();
+
+    /**
+     * 光影状态检测结果缓存刷新间隔(毫秒)。
+     * <p>
+     * {@link #needVanillaShaderFallback} 在<b>每帧每格/每槽位</b>都会被调用(渲染热路径),
+     * 每次都做两次反射 invoke。Iris 光影包切换是低频操作(玩家手动切换),缓存 500ms
+     * 后重新检测即可:切换后最多延迟半秒生效,换来每帧省去数百次反射调用。
+     */
+    private static final long SHADER_STATE_REFRESH_MS = 500L;
+
+    /** 上次光影状态检测时间(epoch ms);初始 0 保证首次调用立即检测。 */
+    private static long lastShaderStateCheck = 0L;
+
+    /** 缓存的上次 {@link #needVanillaShaderFallback} 检测结果。 */
+    private static boolean cachedNeedVanillaShaderFallback = false;
 
     /** 反射获取 IrisApi 单例(getInstance 静态方法)。失败(未装 Iris)返回 null。 */
     private static Object resolveIrisApiInstance() {
@@ -286,9 +349,14 @@ public final class OutlineRenderer {
     /** 着色器加载回调入口(供 EnchantedOutlinesClient 调用)。 */
     public void setOutlineShader(ShaderInstance shader) {
         this.outlineShader = shader;
+        // 缓存 Uniform 引用:setUniform 是热路径(GUI 每格每帧),getUniform 是字符串
+        // 查找;资源重载后 shader 是新实例,Uniform 引用随之刷新。
+        this.outlineAlphaBoostUniform = shader != null ? shader.getUniform("OutlineAlphaBoost") : null;
+        this.outlineCutoutUniform = shader != null ? shader.getUniform("OutlineCutout") : null;
         // 资源重载(F3+T 触发 RegisterShadersEvent)时,TextureManager 已销毁全部注册纹理,
-        // "描边色形状纹理"缓存一并失效 → 清空以便按需重建。
+        // "描边色形状纹理"缓存与"贴图亮度"缓存一并失效 → 清空以便按需重建。
         this.shapeTextures.clear();
+        this.lumaCache.clear();
     }
 
     /**
@@ -306,7 +374,7 @@ public final class OutlineRenderer {
         // 各渲染路径默认半透明 → 重置 cutout;需要不透明的路径(物品展示框)在 boost
         // 之后再用 setOutlineCutout(true) 覆盖(见 renderHandOutline 6 参重载)。
         setOutlineCutout(false);
-        Uniform uniform = shader.getUniform("OutlineAlphaBoost");
+        Uniform uniform = this.outlineAlphaBoostUniform;
         if (uniform != null) {
             uniform.set(boost);
         }
@@ -326,7 +394,7 @@ public final class OutlineRenderer {
         if (shader == null) {
             return;
         }
-        Uniform uniform = shader.getUniform("OutlineCutout");
+        Uniform uniform = this.outlineCutoutUniform;
         if (uniform != null) {
             uniform.set(opaque ? 1.0f : 0.0f);
         }
@@ -354,7 +422,9 @@ public final class OutlineRenderer {
         int packedColor = 0xFF000000 | (color & 0xFFFFFF);
         int z = 150 + (model.isGui3d() ? quadSize : 0);
 
-        List<BakedQuad> quads = collectQuads(model);
+        // 几何(quads / 法线外扩预处理)按 BakedModel 缓存,同物品多格共享,不再每帧重算
+        ModelGeometry geo = geometryOf(model);
+        List<BakedQuad> quads = geo.quads;
         if (quads.isEmpty()) {
             return;
         }
@@ -363,25 +433,38 @@ public final class OutlineRenderer {
             // 3D 物品(方块/铁砧/盾牌等):顶点法线平均外扩(见 renderGui3dInflate)。
             // 用 COLOR_WRITE(不写深度)的 RenderType,本体随后覆盖中心露出外扩环。
             VertexConsumer shellConsumer = outlineBuffers.getBuffer(handOutlineRenderType());
-            renderGui3dInflate(pose, quads, x, y, z, model, shellConsumer, packedColor, thickness);
+            renderGui3dInflate(pose, geo, x, y, z, model, shellConsumer, packedColor, thickness);
         } else {
-            // 扁平物品:8 方向屏幕偏移(各方向整体平移,屏幕像素语义)
+            // 扁平物品:8 方向屏幕偏移(各方向整体平移,屏幕像素语义)。
+            // 基础矩阵链(scale + display transform + 居中)与方向无关 → 只应用一次,
+            // 每个方向仅做一次平移,避免 8 次重复矩阵乘法。
             VertexConsumer consumer = outlineBuffers.getBuffer(outlineRenderType());
-            for (float[] off : OFFSETS) {
-                pose.pushPose();
-                try {
-                    pose.translate(x + 8 + off[0] * thickness * THICKNESS_SCALE,
-                            y + 8 + off[1] * thickness * THICKNESS_SCALE, z);
-                    pose.scale(16.0F, -16.0F, 16.0F);
-                    model.getTransforms().getTransform(ItemDisplayContext.GUI).apply(false, pose);
-                    pose.translate(-0.5F, -0.5F, -0.5F);
-                    Matrix4f poseMatrix = pose.last().pose();
-                    for (BakedQuad quad : quads) {
-                        emitQuad(quad, poseMatrix, consumer, packedColor);
+            pose.pushPose();
+            try {
+                pose.translate(x + 8, y + 8, z);
+                pose.scale(16.0F, -16.0F, 16.0F);
+                model.getTransforms().getTransform(ItemDisplayContext.GUI).apply(false, pose);
+                pose.translate(-0.5F, -0.5F, -0.5F);
+                // 屏幕偏移 thickness×0.5px 在 scale(16) 之后 → 模型空间偏移 = 像素/16
+                float t = thickness * THICKNESS_SCALE / 16.0f;
+                List<BakedQuad> geoQuads = geo.quads;
+                List<Vec3i> geoNormals = geo.expandNormals;
+                Vector3f tmp = new Vector3f(); // 复用,避免每顶点分配
+                for (float[] off : OFFSETS) {
+                    pose.pushPose();
+                    try {
+                        pose.translate(off[0] * t, off[1] * t, 0.0f);
+                        Matrix4f poseMatrix = pose.last().pose();
+                        for (int qi = 0; qi < geoQuads.size(); qi++) {
+                            emitQuad(geoQuads.get(qi), geoNormals.get(qi), poseMatrix,
+                                    consumer, packedColor, tmp);
+                        }
+                    } finally {
+                        pose.popPose();
                     }
-                } finally {
-                    pose.popPose();
                 }
+            } finally {
+                pose.popPose();
             }
         }
         // 立即绘制描边:保证在物品本体(由 GuiGraphics 后续 flush)之前完成。
@@ -395,9 +478,9 @@ public final class OutlineRenderer {
      * 部分(立体物品的上下两端)外扩更多,视觉上轮廓向模型上方偏移、且 thickness
      * 越大越明显。顶点法线固定距离外扩则描边宽度处处相等,消除偏移。
      */
-    private static void renderGui3dInflate(PoseStack pose, List<BakedQuad> quads, int x, int y, int z,
-                                           BakedModel model, VertexConsumer consumer,
-                                           int packedColor, float thickness) {
+    private void renderGui3dInflate(PoseStack pose, ModelGeometry geo, int x, int y, int z,
+                                    BakedModel model, VertexConsumer consumer,
+                                    int packedColor, float thickness) {
         pose.pushPose();
         try {
             pose.translate(x + 8, y + 8, z);
@@ -407,7 +490,7 @@ public final class OutlineRenderer {
             // GUI 1 模型单位 = 16px,扁平物品屏幕偏移为 thickness×0.5px →
             // 模型空间偏移 = thickness×0.5/16,保持两种路径描边宽度一致。
             // 顶点法线外扩贴合表面、无中心偏移,与手持 3D 一致。
-            renderVertexNormalExpand(quads, pose, consumer, packedColor,
+            renderVertexNormalExpand(geo, pose, consumer, packedColor,
                     thickness * THICKNESS_SCALE / 16.0f);
         } finally {
             pose.popPose();
@@ -416,6 +499,61 @@ public final class OutlineRenderer {
 
     /** 顶点位置 key(用原始 float 位做 equals/hashCode,精确去重共享顶点)。 */
     private record Position(float x, float y, float z) {
+    }
+
+    /**
+     * 外扩预处理顶点:位置/UV + 平均法线方向(已归一化)。
+     * 由 {@link #prepareExpand} 一次性算好缓存进 {@link ModelGeometry},
+     * 帧内只做矩阵变换,不再每帧分配 HashMap 与顶点对象。
+     */
+    private record ExpandVertex(float x, float y, float z, float u, float v,
+                                float nx, float ny, float nz) {
+    }
+
+    /**
+     * 单个 BakedModel 的渲染预处理缓存(模型不可变 → 一次性计算,帧间复用)。
+     * <p>
+     * 原实现里 {@link #collectQuads(BakedModel)} 与顶点法线平均外扩在<b>每次渲染</b>
+     * 都重新执行:GUI 中同一物品 64 格 → 每帧 64 次全模型遍历 + 64 次法线 HashMap;
+     * 手持/盔甲每帧同样重复。这里按 BakedModel 实例缓存全部与帧无关的结果:
+     * <ul>
+     *   <li>{@link #quads}:模型全部 quad(collectQuads 结果);</li>
+     *   <li>{@link #expandVertices} / {@link #expandNormals}:顶点法线平均外扩的预处理
+     *       (顶点坐标 + 归一化平均法线方向 + 每 quad 面法线),帧内只做矩阵变换;</li>
+     *   <li>{@link #bySprite} / {@link #spriteQuadIndices}:按 sprite 分组
+     *       (扁平物品形状纹理路径),索引映射一次算好,帧内按索引取法线;</li>
+     *   <li>{@link #luma}:主 sprite 平均感知亮度(关闭混色时按物体颜色压暗曝光)。</li>
+     * </ul>
+     * <p>
+     * ⚠️ <b>缓存纪律(AGENTS.md #4)</b>:只缓存与帧无关的输入(顶点坐标/UV/法线),
+     * 帧内仍做矩阵变换;任何优化不得改变渲染结果 —— 改完后必须在开启/关闭光影
+     * 两种模式下验证形状与颜色不变。
+     */
+    private static final class ModelGeometry {
+        final List<BakedQuad> quads;
+        final List<ExpandVertex[]> expandVertices;
+        final List<Vec3i> expandNormals;
+        final Map<TextureAtlasSprite, List<BakedQuad>> bySprite;
+        /** 每个 sprite 的 quad 在 {@link #quads} 中的索引(与 {@link #bySprite} 顺序一致,用于取法线)。 */
+        final Map<TextureAtlasSprite, int[]> spriteQuadIndices;
+        final float luma;
+        /** 是否全部 quad 使用 stone 精灵(盾牌/三叉戟盒模型,光影 fallback 下恒纯白纯色)。 */
+        final boolean allStone;
+
+        ModelGeometry(BakedModel model) {
+            this.quads = collectQuads(model);
+            List<Vec3i> normals = new ArrayList<>(quads.size());
+            for (BakedQuad q : quads) {
+                normals.add(safeQuadNormal(q));
+            }
+            this.expandNormals = normals;
+            this.expandVertices = prepareExpand(quads, normals);
+            Map<TextureAtlasSprite, int[]> spriteIndices = new LinkedHashMap<>();
+            this.bySprite = groupBySprite(quads, spriteIndices);
+            this.spriteQuadIndices = spriteIndices;
+            this.luma = mainSpriteLuma(quads);
+            this.allStone = usesOnlyStoneSprite(quads);
+        }
     }
 
     /**
@@ -468,51 +606,29 @@ public final class OutlineRenderer {
      * <p>
      * 注意:扁平物品(单层平面)顶点法线只有 ±z,外扩沿 z 不可见 → 扁平物品不走本方法,
      * 改用整体 8 方向平移(UV 不变,剑形轮廓均匀外扩)。
+     * <p>
+     * <b>性能</b>:法线平均计算与顶点数据(坐标/UV/方向)与帧无关,已由
+     * {@link ModelGeometry} 一次性预处理缓存;本方法每帧只做矩阵变换与顶点写入,
+     * 不再分配 HashMap / 顶点对象(共享顶点仍按 quad 重复输出,与 GPU 顶点级语义一致)。
+     *
+     * @param geo         模型几何缓存(含外扩预处理)
+     * @param pose        已居中(translate(-0.5))的 PoseStack
+     * @param consumer    顶点写入目标
+     * @param packedColor 描边色(ABGR 打包)
+     * @param offset      外扩距离(模型单位)
      */
-    private static void renderVertexNormalExpand(List<BakedQuad> quads, PoseStack pose, VertexConsumer consumer,
-                                                 int packedColor, float offset) {
-        // 第一遍:累加每个共享顶点的相邻面法线。
-        // 兼容性:direction 为 null 的 quad 用 safeQuadNormal 叉积兜底;零法线(退化面)
-        // 跳过累加——零向量若参与 accumulate 后 normalize 会得 NaN(0/0),污染整件物品描边。
-        Map<Position, Vector3f> normals = new HashMap<>();
-        for (BakedQuad q : quads) {
-            Vec3i n = safeQuadNormal(q);
-            if (n.getX() == 0 && n.getY() == 0 && n.getZ() == 0) {
-                continue;
-            }
-            int[] v = q.getVertices();
-            for (int i = 0; i + 8 <= v.length; i += 8) {
-                Position key = new Position(Float.intBitsToFloat(v[i]),
-                        Float.intBitsToFloat(v[i + 1]), Float.intBitsToFloat(v[i + 2]));
-                normals.computeIfAbsent(key, k -> new Vector3f()).add(n.getX(), n.getY(), n.getZ());
-            }
-        }
-        for (Vector3f n : normals.values()) {
-            if (n.lengthSquared() > 1e-6f) {
-                n.normalize();
-            }
-        }
-
-        // 第二遍:顶点沿平均法线外扩 offset 后输出
+    private void renderVertexNormalExpand(ModelGeometry geo, PoseStack pose, VertexConsumer consumer,
+                                          int packedColor, float offset) {
         Matrix4f poseMatrix = pose.last().pose();
-        for (BakedQuad q : quads) {
-            Vec3i n = safeQuadNormal(q);
-            int[] v = q.getVertices();
-            for (int i = 0; i + 8 <= v.length; i += 8) {
-                float x = Float.intBitsToFloat(v[i]);
-                float y = Float.intBitsToFloat(v[i + 1]);
-                float z = Float.intBitsToFloat(v[i + 2]);
-                float u = Float.intBitsToFloat(v[i + 4]);
-                float vv = Float.intBitsToFloat(v[i + 5]);
-                Vector3f dir = normals.get(new Position(x, y, z));
-                if (dir == null) {
-                    dir = new Vector3f(); // 防御:顶点未参与第一遍(极端 float 位不一致),不外扩
-                }
-                float ex = dir.x() * offset;
-                float ey = dir.y() * offset;
-                float ez = dir.z() * offset;
-                Vector3f p = poseMatrix.transformPosition(x + ex, y + ey, z + ez, new Vector3f());
-                consumer.addVertex(p.x(), p.y(), p.z(), packedColor, u, vv,
+        Vector3f tmp = new Vector3f(); // 复用,避免每顶点分配
+        List<ExpandVertex[]> quadVertices = geo.expandVertices;
+        List<Vec3i> quadNormals = geo.expandNormals;
+        for (int qi = 0; qi < quadVertices.size(); qi++) {
+            Vec3i n = quadNormals.get(qi);
+            for (ExpandVertex v : quadVertices.get(qi)) {
+                Vector3f p = poseMatrix.transformPosition(
+                        v.x() + v.nx() * offset, v.y() + v.ny() * offset, v.z() + v.nz() * offset, tmp);
+                consumer.addVertex(p.x(), p.y(), p.z(), packedColor, v.u(), v.v(),
                         OverlayTexture.NO_OVERLAY, FULL_BRIGHT, n.getX(), n.getY(), n.getZ());
             }
         }
@@ -576,7 +692,9 @@ public final class OutlineRenderer {
         }
         setOutlineAlphaBoost(boost);
         setOutlineCutout(opaque);
-        List<BakedQuad> quads = collectQuads(model);
+        // 几何(quads / 法线外扩预处理 / 平均亮度)按 BakedModel 缓存,帧间复用
+        ModelGeometry geo = geometryOf(model);
+        List<BakedQuad> quads = geo.quads;
         if (quads.isEmpty()) {
             return;
         }
@@ -594,20 +712,31 @@ public final class OutlineRenderer {
         //   - 盾牌/三叉戟近似盒模型:全部 quads 用 stone 精灵,采样 BLOCK_SHEET 会被
         //     Iris 误判为方块材质(反射方块纹理)且 stone 灰把描边色染暗 → 恒纯白纯色。
         // 展示框(FIXED)在光影 fallback 下也统一半透明(内置 emissive),不再硬切不透明。
-        if (needVanillaShaderFallback() && !model.isGui3d() && !Config.ITEM_PIXEL_COLOR_GLINT.get()) {
-            renderFlatPureColorShape(quads, pose, packedColor, thickness);
+        // ⚠️ 形状算法是"统一轮廓"设计(AGENTS.md #3):下方各分支只换"采样纹理"与
+        // "几何算法"的既定组合,不得拆分/替换形状来源 —— 扁平=形状纹理、
+        // 3D=顶点法线外扩、盔甲/鞘翅/投掷物=逐 cube 放大壳,保持 v0.1.2 语义。
+        boolean fallback = needVanillaShaderFallback();
+        if (fallback && !model.isGui3d() && !Config.ITEM_PIXEL_COLOR_GLINT.get()) {
+            renderFlatPureColorShape(geo, pose, packedColor, thickness);
             outlineBuffers.endBatch();
             return;
         }
         RenderType renderType;
-        if (needVanillaShaderFallback()) {
+        if (fallback) {
             if (model.isGui3d()) {
                 // 盾牌/三叉戟盒模型恒纯白;真实 3D 物品按混色开关选择 BLOCK_SHEET / 纯白。
-                renderType = usesOnlyStoneSprite(quads)
+                // 凡是纯白路径(pureWhite = true)都是"纯描边色",emissive 全亮下亮色
+                // 描边(粉/金/白)过曝刺眼。混合模式因乘了暗色物品贴图而天然压暗
+                // ("根据物体颜色降低曝光");纯色路径缺这层调制 → 按物体主 sprite
+                // 平均亮度压暗描边色(色相不变,暗色物品描边更暗)。盾牌/三叉戟恒纯色
+                // → 无论混色开关如何都压暗。
+                boolean pureWhite = geo.allStone || !Config.ITEM_PIXEL_COLOR_GLINT.get();
+                renderType = pureWhite
                         ? worldEmissiveOutlineRenderType(WHITE_TEXTURE)
-                        : (Config.ITEM_PIXEL_COLOR_GLINT.get()
-                                ? worldEmissiveOutlineRenderType()
-                                : worldEmissiveOutlineRenderType(WHITE_TEXTURE));
+                        : worldEmissiveOutlineRenderType();
+                if (pureWhite) {
+                    packedColor = darkenByLuma(packedColor, geo.luma);
+                }
             } else {
                 // 扁平物品:开混色 → BLOCK_SHEET(关混色已在上方分支处理)
                 renderType = worldEmissiveOutlineRenderType();
@@ -621,20 +750,23 @@ public final class OutlineRenderer {
             // 立体物品(三叉戟/盾牌/方块等):顶点法线平均外扩 —— 每个顶点沿相邻面
             // 法线平均值方向移动固定距离,描边贴合表面、厚度均匀。不依赖几何中心,
             // 细长物品(三叉戟 pole)两端对称延伸,不再"向一端偏移"。
-            renderVertexNormalExpand(quads, pose, consumer, packedColor, offset);
+            renderVertexNormalExpand(geo, pose, consumer, packedColor, offset);
         } else {
             // 扁平物品(剑/工具等):整体平面内 8 方向平移,UV 不变 → 剑形轮廓
             // 均匀外扩、边缘贴合。移动顶点会拉伸 UV → 外扩量 = (scale-1)×到中心
             // 距离,剑身中部离中心近、外扩少,剑头离中心远、外扩多 → 轮廓裂开。
             // 整体平移则每个方向外扩量恒定,与 GUI 扁平物品的屏幕偏移同思路。
             float t = thickness * THICKNESS_SCALE / 16.0f;
+            List<BakedQuad> geoQuads = geo.quads;
+            List<Vec3i> geoNormals = geo.expandNormals;
+            Vector3f tmp = new Vector3f(); // 复用,避免每顶点分配
             for (float[] off : OFFSETS) {
                 pose.pushPose();
                 try {
                     pose.translate(off[0] * t, off[1] * t, 0.0f);
                     Matrix4f m = pose.last().pose();
-                    for (BakedQuad quad : quads) {
-                        emitQuad(quad, m, consumer, packedColor);
+                    for (int qi = 0; qi < geoQuads.size(); qi++) {
+                        emitQuad(geoQuads.get(qi), geoNormals.get(qi), m, consumer, packedColor, tmp);
                     }
                 } finally {
                     pose.popPose();
@@ -649,6 +781,9 @@ public final class OutlineRenderer {
      * <p>
      * 兼容性:部分模组手写 BakedModel 的 {@code getQuads} 在个别方向可能返回 null
      * (vanilla 契约是 List 非空,但第三方实现不可靠),这里跳过 null 防止 NPE。
+     * <p>
+     * ⚠️ 本方法只在 {@link ModelGeometry} 构造时调用一次(结果已缓存,AGENTS.md #4);
+     * 不要在渲染热路径里直接调用它 —— 那会让几何在每帧每格重复计算。
      */
     private static List<BakedQuad> collectQuads(BakedModel model) {
         List<BakedQuad> quads = new ArrayList<>();
@@ -666,6 +801,218 @@ public final class OutlineRenderer {
             quads.addAll(list);
         }
         return quads;
+    }
+
+    /**
+     * 取(或构建)模型的几何缓存,帧间复用 quads / 法线外扩预处理 / 平均亮度。
+     * 弱引用缓存:模型不再被引用(资源重载)时自动回收。
+     */
+    private ModelGeometry geometryOf(BakedModel model) {
+        ModelGeometry geo = this.modelGeometryCache.get(model);
+        if (geo == null) {
+            geo = new ModelGeometry(model);
+            this.modelGeometryCache.put(model, geo);
+        }
+        return geo;
+    }
+
+    /**
+     * 顶点法线平均外扩的预处理:第一遍累加每个共享顶点的相邻面法线并归一化,
+     * 第二遍把"顶点坐标 / UV / 平均法线方向"打包成 {@link ExpandVertex} 缓存。
+     * 原实现每帧重复这两遍并分配 HashMap;现在只在模型首次渲染时算一次。
+     * <p>
+     * 兼容性:direction 为 null 的 quad 用 safeQuadNormal 叉积兜底;零法线(退化面)
+     * 跳过累加——零向量若参与 accumulate 后 normalize 会得 NaN(0/0),污染整件物品描边。
+     *
+     * @param quads       模型 quads(与 quadNormals 顺序一致)
+     * @param quadNormals 每 quad 的面法线(缓存复用)
+     * @return 与 quads 一一对应的外扩顶点数组
+     */
+    private static List<ExpandVertex[]> prepareExpand(List<BakedQuad> quads, List<Vec3i> quadNormals) {
+        Map<Position, Vector3f> normals = new HashMap<>();
+        for (int qi = 0; qi < quads.size(); qi++) {
+            Vec3i n = quadNormals.get(qi);
+            if (n.getX() == 0 && n.getY() == 0 && n.getZ() == 0) {
+                continue;
+            }
+            int[] v = quads.get(qi).getVertices();
+            for (int i = 0; i + 8 <= v.length; i += 8) {
+                Position key = new Position(Float.intBitsToFloat(v[i]),
+                        Float.intBitsToFloat(v[i + 1]), Float.intBitsToFloat(v[i + 2]));
+                normals.computeIfAbsent(key, k -> new Vector3f()).add(n.getX(), n.getY(), n.getZ());
+            }
+        }
+        for (Vector3f n : normals.values()) {
+            if (n.lengthSquared() > 1e-6f) {
+                n.normalize();
+            }
+        }
+        List<ExpandVertex[]> out = new ArrayList<>(quads.size());
+        for (int qi = 0; qi < quads.size(); qi++) {
+            int[] v = quads.get(qi).getVertices();
+            ExpandVertex[] verts = new ExpandVertex[v.length / 8];
+            int vi = 0;
+            for (int i = 0; i + 8 <= v.length; i += 8, vi++) {
+                float x = Float.intBitsToFloat(v[i]);
+                float y = Float.intBitsToFloat(v[i + 1]);
+                float z = Float.intBitsToFloat(v[i + 2]);
+                float u = Float.intBitsToFloat(v[i + 4]);
+                float vv = Float.intBitsToFloat(v[i + 5]);
+                // 防御:顶点未参与第一遍(极端 float 位不一致)→ 零方向,不外扩
+                Vector3f dir = normals.get(new Position(x, y, z));
+                float dx = dir != null ? dir.x() : 0f;
+                float dy = dir != null ? dir.y() : 0f;
+                float dz = dir != null ? dir.z() : 0f;
+                verts[vi] = new ExpandVertex(x, y, z, u, vv, dx, dy, dz);
+            }
+            out.add(verts);
+        }
+        return out;
+    }
+
+    /**
+     * 按 sprite 分组(扁平物品形状纹理路径用);无 sprite 的 quad 忽略。
+     * 同时把每个 quad 在 quads 列表中的索引写入 spriteIndices(用于帧内按索引取法线,
+     * 避免每帧 indexOf 搜索)。
+     */
+    private static Map<TextureAtlasSprite, List<BakedQuad>> groupBySprite(
+            List<BakedQuad> quads, Map<TextureAtlasSprite, int[]> spriteIndices) {
+        Map<TextureAtlasSprite, List<BakedQuad>> bySprite = new LinkedHashMap<>();
+        Map<TextureAtlasSprite, java.util.List<Integer>> indexAcc = new LinkedHashMap<>();
+        for (int i = 0; i < quads.size(); i++) {
+            TextureAtlasSprite sprite = quads.get(i).getSprite();
+            if (sprite == null) {
+                continue;
+            }
+            bySprite.computeIfAbsent(sprite, k -> new ArrayList<>()).add(quads.get(i));
+            indexAcc.computeIfAbsent(sprite, k -> new ArrayList<>()).add(i);
+        }
+        for (Map.Entry<TextureAtlasSprite, java.util.List<Integer>> e : indexAcc.entrySet()) {
+            int[] idx = new int[e.getValue().size()];
+            for (int i = 0; i < idx.length; i++) {
+                idx[i] = e.getValue().get(i);
+            }
+            spriteIndices.put(e.getKey(), idx);
+        }
+        return bySprite;
+    }
+
+    /**
+     * 模型主 sprite 的平均感知亮度(0..1;读取失败返回 -1)。
+     * 关闭混色时按物体颜色压暗纯色描边曝光(见 {@link #exposureScale})。
+     */
+    private static float mainSpriteLuma(List<BakedQuad> quads) {
+        for (BakedQuad q : quads) {
+            TextureAtlasSprite s = q.getSprite();
+            if (s == null) {
+                continue;
+            }
+            NativeImage img = spriteOriginalImage(s);
+            if (img != null) {
+                float luma;
+                try {
+                    luma = averageLuma(img);
+                } catch (Exception ignored) {
+                    // 该贴图无法读取亮度(如格式不支持)→ 试下一个;绝不中断几何缓存构建
+                    continue;
+                }
+                if (luma >= 0f) {
+                    return luma;
+                }
+            }
+        }
+        return -1f;
+    }
+
+    /**
+     * 平均感知亮度(Rec.601 加权,按 alpha 加权平均;全透明或无法读取返回 -1)。
+     * 大图自动降采样(步长 = 像素数 / 4096),16×16 贴图全量遍历,只算一次并缓存。
+     * <p>
+     * ⚠️ <b>返回范围必须是 0..1(已 ÷255)</b>:曾因漏除 255 导致
+     * {@link #exposureScale} 输出 scale≈113.9,描边色 RGB 乘巨大值后溢出 32 位
+     * int → 颜色完全错乱(2026-08-08 事故)。任何人改动本方法,先确认返回值域。
+     */
+    private static float averageLuma(NativeImage img) {
+        int w = img.getWidth(), h = img.getHeight();
+        int step = Math.max(1, (w * h) / 4096);
+        long sum = 0, count = 0;
+        for (int y = 0; y < h; y += step) {
+            for (int x = 0; x < w; x += step) {
+                // NativeImage RGBA 内存小端 → getPixelRGBA 返回 ABGR,alpha 在最高字节
+                int abgr = img.getPixelRGBA(x, y);
+                int a = (abgr >>> 24) & 0xFF;
+                if (a == 0) {
+                    continue;
+                }
+                int r = abgr & 0xFF, g = (abgr >> 8) & 0xFF, b = (abgr >> 16) & 0xFF;
+                sum += (long) (299 * r + 587 * g + 114 * b) * a;
+                count += a;
+            }
+        }
+        if (count == 0) {
+            return -1f;
+        }
+        // Rec.601 加权平均后 ÷255 归一化到 0..1
+        return (float) (sum / (double) (count * 1000 * 255));
+    }
+
+    /**
+     * 取(并缓存)源贴图的平均感知亮度;无法读取时返回 -1(不压暗)。
+     * 缓存按 location,资源重载时清空。
+     * <p>
+     * ⚠️ 返回 -1(而非异常)是设计:任何亮度读取失败只"不压暗",
+     * <b>绝不</b>中断或改变形状纹理生成(否则描边退化为矩形,见 AGENTS.md #2)。
+     */
+    private float lumaOf(ResourceLocation source, NativeImage img) {
+        Float cached = this.lumaCache.get(source);
+        if (cached != null) {
+            return cached;
+        }
+        float luma;
+        try {
+            luma = averageLuma(img);
+        } catch (Exception ignored) {
+            // 亮度读取失败(如贴图格式不支持 getPixelRGBA):不压暗、不中断形状纹理生成
+            luma = -1f;
+        }
+        this.lumaCache.put(source, luma);
+        return luma;
+    }
+
+    /**
+     * 纯色描边的曝光缩放:物体越暗,描边越暗(0.35..1.0)。
+     * <p>
+     * 模拟"混合算法根据物体颜色降低曝光亮度":混色时 {@code texel × vertexColor}
+     * 被暗色物品贴图天然压暗;纯色路径没有这层调制,亮色描边在 emissive 全亮下
+     * 会过曝刺眼 → 按物体平均亮度补上。luma=1(纯白)保持原亮度,luma=0(纯黑)
+     * 压到 35%(下限保证描边仍可见)。
+     *
+     * @param luma 物体平均感知亮度(0..1);-1 = 无法读取,不压暗
+     */
+    // ⚠️ 返回值域硬约束 0.35..1.0:调用方(lumaOf/shapeTexture/darkenByLuma)依赖此范围,
+    // 若 luma 不是 0..1(如 averageLuma 漏除 255)本函数会输出 55~113 的非法 scale。
+    private static float exposureScale(float luma) {
+        if (luma < 0f) {
+            return 1.0f;
+        }
+        return 0.35f + 0.65f * luma;
+    }
+
+    /**
+     * 按物体平均亮度压暗 ARGB 描边色(仅 RGB,色相不变;配置关闭时原样返回)。
+     * <p>
+     * ⚠️ 输入 luma 必须是 0..1(见 {@link #averageLuma} 的归一化铁律);scale 溢出
+     * 会破坏颜色。改动前先确认调用链的归一化未被破坏(AGENTS.md #2)。
+     */
+    private static int darkenByLuma(int argb, float luma) {
+        if (!Config.OUTLINE_EXPOSURE_REDUCE.get()) {
+            return argb;
+        }
+        float scale = exposureScale(luma);
+        int r = (int) (((argb >> 16) & 0xFF) * scale);
+        int g = (int) (((argb >> 8) & 0xFF) * scale);
+        int b = (int) ((argb & 0xFF) * scale);
+        return 0xFF000000 | (r << 16) | (g << 8) | b;
     }
 
     /**
@@ -696,17 +1043,24 @@ public final class OutlineRenderer {
      * 单个 quad:顶点经 pose 矩阵变换到 GUI 像素空间,以纯描边色写入。
      * 顶点数据布局(i 步进 8):x, y, z / 打包颜色 / u, v / 未用。
      * 法线取 quad 方向(GUI 下着色器不使用,仅补全格式)。
+     *
+     * @param quad        要输出的 quad
+     * @param normal      该 quad 的法线(已由 {@link ModelGeometry} 缓存,避免每方向重复计算)
+     * @param poseMatrix  顶点变换矩阵
+     * @param consumer    顶点写入目标
+     * @param packedColor 描边色(ABGR 打包)
+     * @param tmp         复用的矩阵变换结果缓冲
      */
-    private static void emitQuad(BakedQuad quad, Matrix4f poseMatrix, VertexConsumer consumer, int packedColor) {
+    private static void emitQuad(BakedQuad quad, Vec3i normal, Matrix4f poseMatrix,
+                                 VertexConsumer consumer, int packedColor, Vector3f tmp) {
         int[] vertices = quad.getVertices();
-        Vec3i normal = safeQuadNormal(quad);
         for (int i = 0; i + 8 <= vertices.length; i += 8) {
             float x = Float.intBitsToFloat(vertices[i]);
             float y = Float.intBitsToFloat(vertices[i + 1]);
             float z = Float.intBitsToFloat(vertices[i + 2]);
             float u = Float.intBitsToFloat(vertices[i + 4]);
             float v = Float.intBitsToFloat(vertices[i + 5]);
-            Vector3f p = poseMatrix.transformPosition(x, y, z, new Vector3f());
+            Vector3f p = poseMatrix.transformPosition(x, y, z, tmp);
             consumer.addVertex(p.x(), p.y(), p.z(), packedColor, u, v,
                     OverlayTexture.NO_OVERLAY, FULL_BRIGHT,
                     normal.getX(), normal.getY(), normal.getZ());
@@ -724,34 +1078,39 @@ public final class OutlineRenderer {
      * <p>
      * 顶点 UV 需从 atlas 绝对坐标重映射为 sprite 相对坐标(独立纹理 0..1)。
      * 顶点颜色传白色(描边色已烘焙进纹理)。
+     * <p>
+     * ⚠️ 本路径是扁平物品"统一轮廓"形状的来源(AGENTS.md #3):形状完全取决于
+     * {@link #shapeTextureFor} 生成的形状纹理(alpha 遮罩)。若纹理回退纯白矩形
+     * (读不到 alpha),描边会变成正方形 —— 修改前先检查 {@link #shapeTextureForLocation}
+     * 的 ImageIO 铁律与 {@link #spriteOriginalImage} 的父类链查找未被破坏。
      *
      * @param quads     收集到的模型 quads
      * @param pose      已居中(translate(-0.5))的 PoseStack
      * @param color     ARGB 描边色
      * @param thickness 描边厚度(像素语义)
      */
-    private void renderFlatPureColorShape(List<BakedQuad> quads, PoseStack pose, int color, float thickness) {
+    private void renderFlatPureColorShape(ModelGeometry geo, PoseStack pose, int color, float thickness) {
         float t = thickness * THICKNESS_SCALE / 16.0f;
-        // 按 sprite 分组:同一贴图的 quad 共用一张形状纹理(同一 RenderType 一次绑定)
-        Map<TextureAtlasSprite, List<BakedQuad>> bySprite = new LinkedHashMap<>();
-        for (BakedQuad q : quads) {
-            TextureAtlasSprite sprite = q.getSprite();
-            if (sprite == null) {
-                continue;
-            }
-            bySprite.computeIfAbsent(sprite, k -> new ArrayList<>()).add(q);
-        }
+        // 按 sprite 分组(已随模型缓存):同一贴图的 quad 共用一张形状纹理(同一 RenderType 一次绑定)。
+        // 法线与 quad 索引也随模型缓存,帧内按索引取,不做 indexOf 搜索。
+        Map<TextureAtlasSprite, List<BakedQuad>> bySprite = geo.bySprite;
+        Map<TextureAtlasSprite, int[]> spriteQuadIndices = geo.spriteQuadIndices;
+        List<Vec3i> geoNormals = geo.expandNormals;
+        Vector3f tmp = new Vector3f(); // 复用,避免每顶点分配
         for (Map.Entry<TextureAtlasSprite, List<BakedQuad>> entry : bySprite.entrySet()) {
             TextureAtlasSprite sprite = entry.getKey();
             ResourceLocation tex = shapeTextureFor(sprite, color);
             VertexConsumer consumer = outlineBuffers.getBuffer(worldEmissiveOutlineRenderType(tex));
+            List<BakedQuad> spriteQuads = entry.getValue();
+            int[] quadIndices = spriteQuadIndices.get(sprite);
             for (float[] off : OFFSETS) {
                 pose.pushPose();
                 try {
                     pose.translate(off[0] * t, off[1] * t, 0.0f);
                     Matrix4f m = pose.last().pose();
-                    for (BakedQuad quad : entry.getValue()) {
-                        emitQuadShape(sprite, quad, m, consumer);
+                    for (int i = 0; i < spriteQuads.size(); i++) {
+                        emitQuadShape(sprite, spriteQuads.get(i), geoNormals.get(quadIndices[i]),
+                                m, consumer, tmp);
                     }
                 } finally {
                     pose.popPose();
@@ -778,18 +1137,33 @@ public final class OutlineRenderer {
      */
     private ResourceLocation shapeTexture(ResourceLocation source, NativeImage src, int color) {
         int rgb = color & 0xFFFFFF;
-        ShapeKey key = new ShapeKey(source, rgb);
+        boolean reduce = Config.OUTLINE_EXPOSURE_REDUCE.get();
+        ShapeKey key = new ShapeKey(source, rgb, reduce);
         ResourceLocation loc = this.shapeTextures.get(key);
         if (loc == null) {
             int w = src.getWidth(), h = src.getHeight();
             NativeImage img = new NativeImage(w, h, false);
-            int r = (rgb >> 16) & 0xFF, g = (rgb >> 8) & 0xFF, b = rgb & 0xFF;
-            for (int y = 0; y < h; y++) {
-                for (int x = 0; x < w; x++) {
-                    // NativeImage RGBA 内存小端 → getPixelRGBA 返回 ABGR 打包,alpha 在最高字节
-                    int a = (src.getPixelRGBA(x, y) >>> 24) & 0xFF;
-                    img.setPixelRGBA(x, y, (a << 24) | (b << 16) | (g << 8) | r);
+            // 关闭混色时描边为纯色,emissive 全亮下亮色(粉/金/白)会过曝刺眼。
+            // 按源贴图的平均感知亮度压暗 RGB(色相不变):暗色物品(铁剑等)的描边
+            // 显著变暗、亮色物品基本不变 —— 模拟"混合算法根据物体颜色降低曝光"。
+            // 同一贴图不同描边色会各生成一张形状纹理,亮度按 source 缓存避免重复遍历。
+            float scale = reduce ? exposureScale(lumaOf(source, src)) : 1.0f;
+            int r = (int) (((rgb >> 16) & 0xFF) * scale);
+            int g = (int) (((rgb >> 8) & 0xFF) * scale);
+            int b = (int) ((rgb & 0xFF) * scale);
+            try {
+                for (int y = 0; y < h; y++) {
+                    for (int x = 0; x < w; x++) {
+                        // ⚠️ NativeImage RGBA 内存小端:getPixelRGBA 返回 ABGR 打包,
+                        // alpha 在最高字节;setPixelRGBA 写入 (a<<24)|(b<<16)|(g<<8)|r。
+                        // 通道顺序写错会导致形状/颜色错乱,改动前务必确认打包方向。
+                        int a = (src.getPixelRGBA(x, y) >>> 24) & 0xFF;
+                        img.setPixelRGBA(x, y, (a << 24) | (b << 16) | (g << 8) | r);
+                    }
                 }
+            } catch (Exception e) {
+                // 源贴图格式不支持像素读取(如 RGB 无 alpha)→ 无形状信息,回退纯色矩形
+                return WHITE_TEXTURE;
             }
             loc = ResourceLocation.fromNamespaceAndPath("enchanted_outlines",
                     "shape/" + source.getNamespace() + "/"
@@ -818,22 +1192,64 @@ public final class OutlineRenderer {
     }
 
     /**
-     * 独立纹理(盔甲/鞘翅/投掷物实体)版形状纹理:从 ResourceManager 读取纹理 PNG,
-     * 走统一入口 {@link #shapeTexture}。
+     * 独立纹理(盔甲/鞘翅/投掷物实体)版形状纹理:读取纹理 PNG,走统一入口 {@link #shapeTexture}。
+     * <p>
+     * <b>关键</b>:不能用 {@code NativeImage.read(InputStream)} 直接读 —— 它对
+     * <b>palette(索引色)+ tRNS 透明</b> 的 PNG(原版盔甲/鞘翅/多数物品贴图都是)会
+     * <b>丢失透明信息</b>,解码后全像素 alpha=255 → 形状纹理 100% 实心 → 描边变成
+     * 实心立方体。改用 JDK {@code ImageIO}(正确展开 palette 的 tRNS 为 alpha)读取
+     * ARGB,再逐像素拷贝到 NativeImage。
+     * <p>
+     * <b>性能</b>:本方法每帧每实体每槽位都会被调用(armorOutlineRenderType),先在
+     * {@link #shapeTextures} 缓存里查键(source, rgb, reduce),命中直接返回,不再读文件
+     * (首次才读)。
      *
      * @param texture 独立纹理 location(如 armor / elytra / trident 材质)
      * @param color   ARGB 描边色
      * @return 已注册的纹理 location;读取失败时回退纯白矩形
      */
     private ResourceLocation shapeTextureForLocation(ResourceLocation texture, int color) {
+        int rgb = color & 0xFFFFFF;
+        boolean reduce = Config.OUTLINE_EXPOSURE_REDUCE.get();
+        ShapeKey key = new ShapeKey(texture, rgb, reduce);
+        ResourceLocation cached = this.shapeTextures.get(key);
+        if (cached != null) {
+            return cached; // 已生成过:直接复用,不再读 PNG
+        }
         try {
             var resource = Minecraft.getInstance().getResourceManager().getResource(texture);
             if (resource.isEmpty()) {
                 return WHITE_TEXTURE;
             }
-            try (InputStream in = resource.get().open();
-                 NativeImage src = NativeImage.read(in)) {
-                return shapeTexture(texture, src, color);
+            try (InputStream in = resource.get().open()) {
+                // ⚠️ 铁律:必须用 ImageIO 而非 NativeImage.read。原版盔甲/鞘翅贴图是
+                // palette(索引色)+ tRNS 透明 PNG,NativeImage.read 会丢失透明信息,
+                // 解码后全像素 alpha=255 → 形状纹理 100% 实心 → 描边变实心立方体
+                // (2026-08-08 事故)。ImageIO 正确展开 palette 的 tRNS 为 alpha。
+                // ImageIO 正确处理 palette+tRNS:透明像素 alpha=0(不透明 255)
+                java.awt.image.BufferedImage bi = javax.imageio.ImageIO.read(in);
+                if (bi == null) {
+                    return WHITE_TEXTURE;
+                }
+                int w = bi.getWidth(), h = bi.getHeight();
+                NativeImage src = new NativeImage(w, h, false);
+                for (int y = 0; y < h; y++) {
+                    for (int x = 0; x < w; x++) {
+                        // ⚠️ NativeImage RGBA 内存小端:getPixelRGBA 返回 ABGR 打包,
+                        // alpha 在最高字节;setPixelRGBA 写入 (a<<24)|(b<<16)|(g<<8)|r。
+                        // 通道顺序写错会导致形状/颜色错乱,改动前务必确认打包方向。
+                        int argb = bi.getRGB(x, y); // ARGB
+                        int a = (argb >>> 24) & 0xFF;
+                        int r = (argb >> 16) & 0xFF;
+                        int g = (argb >> 8) & 0xFF;
+                        int b = argb & 0xFF;
+                        // NativeImage 内存小端 ABGR 打包:alpha 在最高字节
+                        src.setPixelRGBA(x, y, (a << 24) | (b << 16) | (g << 8) | r);
+                    }
+                }
+                ResourceLocation loc = shapeTexture(texture, src, color);
+                src.close();
+                return loc;
             }
         } catch (Exception ignored) {
             return WHITE_TEXTURE;
@@ -845,25 +1261,57 @@ public final class OutlineRenderer {
      * <p>
      * 1.21.1 的 {@code SpriteContents.originalImage} 是私有字段且无公开 getter,
      * 用反射读取(mojmap 字段名运行期稳定;失败返回 null 由调用方回退)。
+     * <p>
+     * ⚠️ 按 sprite contents 的<b>类</b>缓存 Field(静态,避免每次 getDeclaredField);
+     * 查找必须用 {@link #findOriginalImageField} <b>沿父类链递归</b> —— SpriteContents
+     * 子类不直接声明该字段,直接 getDeclaredField 会 NoSuchFieldException → 若因此
+     * 返回 null,扁平物品形状纹理回退纯白矩形(描边变成方块)。
      */
+    private static final Map<Class<?>, java.lang.reflect.Field> ORIGINAL_IMAGE_FIELDS = new HashMap<>();
+
     private static NativeImage spriteOriginalImage(TextureAtlasSprite sprite) {
         try {
-            java.lang.reflect.Field field = sprite.contents().getClass().getDeclaredField("originalImage");
-            field.setAccessible(true);
+            Class<?> clazz = sprite.contents().getClass();
+            java.lang.reflect.Field field = ORIGINAL_IMAGE_FIELDS.get(clazz);
+            if (field == null) {
+                field = findOriginalImageField(clazz);
+                if (field == null) {
+                    return null; // 找不到(异常类):本次失败,不缓存失败标记,下次重试
+                }
+                field.setAccessible(true);
+                ORIGINAL_IMAGE_FIELDS.put(clazz, field);
+            }
             return (NativeImage) field.get(sprite.contents());
         } catch (Exception ignored) {
             return null;
         }
     }
 
+    /** 沿类链向上查找 originalImage 字段(父类声明的私有字段对子类实例同样可读)。 */
+    private static java.lang.reflect.Field findOriginalImageField(Class<?> clazz) {
+        for (Class<?> c = clazz; c != null && c != Object.class; c = c.getSuperclass()) {
+            try {
+                return c.getDeclaredField("originalImage");
+            } catch (NoSuchFieldException ignored) {
+            }
+        }
+        return null;
+    }
+
     /**
      * 单个 quad 以"形状纹理"模式写入:UV 从 atlas 绝对坐标重映射为该 sprite 的相对坐标
      * (0..1,独立纹理全图),顶点颜色传白色(描边色已烘焙进纹理)。
+     *
+     * @param sprite      形状纹理对应的 atlas 精灵(用于 UV 重映射)
+     * @param quad        要输出的 quad
+     * @param normal      该 quad 的法线(已由 {@link ModelGeometry} 缓存,避免每方向重复计算)
+     * @param poseMatrix  顶点变换矩阵
+     * @param consumer    顶点写入目标
+     * @param tmp         复用的矩阵变换结果缓冲
      */
-    private static void emitQuadShape(TextureAtlasSprite sprite, BakedQuad quad, Matrix4f poseMatrix,
-                                      VertexConsumer consumer) {
+    private static void emitQuadShape(TextureAtlasSprite sprite, BakedQuad quad, Vec3i normal,
+                                      Matrix4f poseMatrix, VertexConsumer consumer, Vector3f tmp) {
         int[] vertices = quad.getVertices();
-        Vec3i normal = safeQuadNormal(quad);
         float u0 = sprite.getU0(), u1 = sprite.getU1();
         float v0 = sprite.getV0(), v1 = sprite.getV1();
         float uw = u1 - u0, vh = v1 - v0;
@@ -875,7 +1323,7 @@ public final class OutlineRenderer {
             float v = Float.intBitsToFloat(vertices[i + 5]);
             float ru = uw > 1e-6f ? (u - u0) / uw : 0.0f;
             float rv = vh > 1e-6f ? (v - v0) / vh : 0.0f;
-            Vector3f p = poseMatrix.transformPosition(x, y, z, new Vector3f());
+            Vector3f p = poseMatrix.transformPosition(x, y, z, tmp);
             consumer.addVertex(p.x(), p.y(), p.z(), 0xFFFFFFFF, ru, rv,
                     OverlayTexture.NO_OVERLAY, FULL_BRIGHT,
                     normal.getX(), normal.getY(), normal.getZ());
@@ -1212,22 +1660,29 @@ public final class OutlineRenderer {
      * {@code part.visit} 会应用部件自身的 translateAndRotate 并递归子部件(如 head→hat),
      * 回调里拿到的是已含完整变换的 Pose。对每个 cube:把 pose 矩阵右乘
      * T(c)·S·T(-c)(c 为该 cube 包围盒中心,局部单位),再编译,随后还原矩阵。
+     * <p>
+     * <b>性能</b>:visit 回调是每帧每 cube 调用的热路径,复用局部 Matrix4f 临时对象
+     * (而非每 cube 新建 3 个),JOML 的矩阵变换是纯计算,不保留引用 → 复用安全。
      */
     private static void renderPartInflated(PoseStack pose, ModelPart part, VertexConsumer consumer,
                                            int packedColor, float scale) {
         if (part == null || !part.visible) {
             return;
         }
+        Matrix4f original = new Matrix4f(); // 复用:保存/还原 cube 局部 pose
+        Matrix4f transform = new Matrix4f(); // 复用:T(c)·S·T(-c) 临时
         part.visit(pose, (p, path, index, cube) -> {
             // cube 包围盒中心(像素单位 → 模型单位:像素/16)
             float cx = (cube.minX + cube.maxX) / 2.0f / 16.0f;
             float cy = (cube.minY + cube.maxY) / 2.0f / 16.0f;
             float cz = (cube.minZ + cube.maxZ) / 2.0f / 16.0f;
-            Matrix4f original = new Matrix4f(p.pose());
-            p.pose().mul(new Matrix4f()
-                    .translation(cx, cy, cz)
+            original.set(p.pose());
+            // transform = T(c)·S·T(-c),复用同一对象(矩阵乘法是纯读源写目标)
+            transform.identity()
+                    .translate(cx, cy, cz)
                     .scale(scale)
-                    .translate(-cx, -cy, -cz));
+                    .translate(-cx, -cy, -cz);
+            p.pose().mul(transform);
             try {
                 cube.compile(p, consumer, FULL_BRIGHT, OverlayTexture.NO_OVERLAY, packedColor);
             } finally {
@@ -1319,6 +1774,10 @@ public final class OutlineRenderer {
      *       <b>完全一致</b>,只是颜色为纯描边色。</li>
      * </ul>
      * 即:三种模式统一调用同一个外层算法,仅颜色来源(纹理 RGB / 纯描边色)不同。
+     * <p>
+     * ⚠️ <b>统一入口(AGENTS.md #3)</b>:本方法<b>只负责选择采样纹理</b>,外层几何
+     * 算法(renderPartInflated 逐 cube 放大壳)恒同。不要在此为某模式单独改几何,
+     * 否则各模式形状不一致(如盔甲变实心立方体)。
      *
      * @param texture 盔甲/鞘翅/投掷物基础纹理(原纹理)
      * @param color   描边 ARGB(混色关时用于烘焙形状纹理)

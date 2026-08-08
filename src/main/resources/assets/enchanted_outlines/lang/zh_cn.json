@@ -24,6 +24,9 @@
   "enchanted_outlines.config.armorPixelColorGlint": "盔甲光效混合纹理颜色",
   "enchanted_outlines.config.armorPixelColorGlint.tooltip": "仅光影兼容模式生效：开启时盔甲/鞘翅/投掷物描边采样原纹理 alpha 遮罩（贴合单层纹理轮廓，颜色与纹理混合）；关闭时描边为纯色（形状由模型几何决定）。",
 
+  "enchanted_outlines.config.outlineExposureReduce": "纯色描边按物体颜色降曝光",
+  "enchanted_outlines.config.outlineExposureReduce.tooltip": "仅当关闭“附魔光效混合物品颜色”时生效：纯色描边按物品贴图的平均亮度压暗（暗色物品的描边显著变暗、亮色物品基本不变），模拟“混合算法根据物体颜色降低曝光”的效果，色相不变。关闭则纯色描边保持原始亮度。",
+
   "enchanted_outlines.config.mergeMode": "多附魔取色",
   "enchanted_outlines.config.mergeMode.tooltip": "当一件物品带有多个附魔时,以哪个附魔的颜色为准?",
   "enchanted_outlines.config.mergeMode.highest": "最高等级优先",

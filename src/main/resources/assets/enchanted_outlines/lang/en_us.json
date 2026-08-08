@@ -24,6 +24,9 @@
   "enchanted_outlines.config.armorPixelColorGlint": "Mix Armor Outline With Texture",
   "enchanted_outlines.config.armorPixelColorGlint.tooltip": "Shader-compat mode only: when ON, armor/elytra/projectile outlines sample the original texture alpha mask (hug the layered texture silhouette; color mixes with the texture). When OFF, the outline is a pure color (shape follows the model geometry).",
 
+  "enchanted_outlines.config.outlineExposureReduce": "Reduce Exposure By Item Color",
+  "enchanted_outlines.config.outlineExposureReduce.tooltip": "Shader-compat mode only, applies when color mixing is OFF: the pure-color outline is darkened by the item texture's average brightness (dark items like iron swords get much dimmer outlines, bright items stay bright), mimicking how the mix mode lowers exposure by the item color — hue is preserved. When OFF, pure-color outlines keep their full brightness.",
+
   "enchanted_outlines.config.mergeMode": "Multi-Enchant Color",
   "enchanted_outlines.config.mergeMode.tooltip": "When an item has several enchantments, which color wins?",
   "enchanted_outlines.config.mergeMode.highest": "Highest level first",

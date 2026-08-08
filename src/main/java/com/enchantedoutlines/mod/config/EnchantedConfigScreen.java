@@ -102,6 +102,7 @@ public class EnchantedConfigScreen extends Screen {
             y = addDoubleRow(y, "armorThickness", Config.ARMOR_THICKNESS, 0.0, 8.0, widgetX);
             y = addBooleanRow(y, "itemPixelColorGlint", Config.ITEM_PIXEL_COLOR_GLINT, widgetX);
             y = addBooleanRow(y, "armorPixelColorGlint", Config.ARMOR_PIXEL_COLOR_GLINT, widgetX);
+            y = addBooleanRow(y, "outlineExposureReduce", Config.OUTLINE_EXPOSURE_REDUCE, widgetX);
             y = addMergeModeRow(y, widgetX);
         } else {
             y = addColorRow(y, "defaultColor", Config.DEFAULT_COLOR, widgetX);
@@ -345,6 +346,9 @@ public class EnchantedConfigScreen extends Screen {
 
     private void markChanged() {
         Config.save();
+        // 解析缓存(默认色/逐附魔色/逐物品色/禁用列表)只在 ModConfigEvent 时失效,
+        // 配置界面修改不会触发该事件 → 必须手动失效,否则改动不生效直到重启/F3+T。
+        Config.invalidateCache();
         savedFlash = 1f;
     }
 
