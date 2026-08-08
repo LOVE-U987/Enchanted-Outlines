@@ -1,10 +1,14 @@
 package com.enchantedoutlines.mod.outline;
 
 import java.io.InputStream;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.WeakHashMap;
 
@@ -20,7 +24,9 @@ import com.mojang.blaze3d.vertex.VertexFormat;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.HumanoidModel;
+import net.minecraft.client.model.Model;
 import net.minecraft.client.model.geom.ModelPart;
+import net.minecraft.client.renderer.BlockEntityWithoutLevelRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderStateShard;
 import net.minecraft.client.renderer.RenderType;
@@ -33,15 +39,22 @@ import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.resources.model.BakedModel;
+import net.minecraft.client.resources.model.ModelManager;
+import net.minecraft.client.resources.model.ModelResourceLocation;
 import net.minecraft.client.resources.model.SimpleBakedModel;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Vec3i;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemDisplayContext;
+import net.minecraft.world.item.ItemStack;
+
+import net.neoforged.neoforge.client.extensions.common.IClientItemExtensions;
 
 import org.joml.Matrix4f;
+import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
 /**
@@ -64,7 +77,9 @@ import org.joml.Vector3f;
  *   <li>盔甲穿戴/投掷物实体:逐 cube 绕自身包围盒中心放大壳。</li>
  * </ul>
  * <b>已知限制:</b>BEWLR 自定义渲染物品(盾牌、三叉戟、望远镜已用近似模型支持;
- * 钓鱼竿、地图等占位模型无形状)暂不描边。
+ * 其余在 GUI/掉落物/展示框下若有 {@code <itemId>_inventory} 平面模型变体则用其描边
+ * (如永恒星光月弧长枪);手持 BEWLR 物品(月弧长枪/灾变武器等)本体是模组自定义
+ * 实体模型,通过 {@link #renderBewlrEntityOutline} 反射其模型做逐 cube/整体放大壳描边。
  * <p>
  * ⚠️ <b>渲染架构铁律(违反即产生"正方形/立方体"描边 bug,详见仓库根目录 AGENTS.md):</b>
  * <ol>
@@ -115,11 +130,18 @@ public final class OutlineRenderer {
      */
     private static final float PROJECTILE_INFLATE_PER_THICKNESS = 0.12f;
 
+    /** 盔甲参考半对角线(模型单位):原版胸甲 body cube(8×12×4 像素)→ √(8²+12²+4²)/2/16 ≈ 0.468。 */
+    private static final float ARMOR_REF_DIAG = 0.468f;
+
     /**
-     * 鞘翅描边放大增量。鞘翅翼片是薄板(约 10×20×2 模型单位),形状扁平开阔;
-     * 系数介于投掷物与盔甲之间,取 0.06 让穿戴鞘翅时轮廓清晰可见。
+     * ⚠️ 鞘翅描边<b>与盔甲共用同一系数与参考对角线</b>(v0.1.7 修正)。
+     * <p>
+     * 此前鞘翅用独立系数 0.09 + refDiag 0.701,外扩像素 = thickness×0.5×0.09×
+     * 0.701×16 ≈ thickness×0.504 → armorThickness=8 时约 4px,是盔甲(约 1.2px)
+     * 的 3 倍多,同一配置下鞘翅明显更宽(实测反馈)。修正:鞘翅直接复用
+     * {@link #ARMOR_INFLATE_PER_THICKNESS} 与 {@link #ARMOR_REF_DIAG},均匀外扩后
+     * 两者外扩像素完全一致 —— 同一个 armorThickness 统一控制盔甲与鞘翅视觉厚度。
      */
-    private static final float ELYTRA_INFLATE_PER_THICKNESS = 0.06f;
 
     /** 8 个屏幕偏移方向。 */
     private static final float[][] OFFSETS = {
@@ -1485,12 +1507,10 @@ public final class OutlineRenderer {
             List<BakedQuad> quads = new ArrayList<>();
             // S(1,-1,-1)·plate 局部坐标,不加 0.5(见方法注释推导)
             addBox(quads, sprite, -0.375f, -0.6875f, 0.0625f, 0.375f, 0.6875f, 0.125f);
-            // 所有方向给空列表:SimpleBakedModel 对非 null direction 返回 culledFaces.get(dir),
-            // 用 Map.of() 会返回 null → collectQuads 的 addAll(null) 崩溃
-            Map<Direction, List<BakedQuad>> emptyByDir = Map.of(
-                    Direction.NORTH, List.of(), Direction.SOUTH, List.of(),
-                    Direction.EAST, List.of(), Direction.WEST, List.of(),
-                    Direction.UP, List.of(), Direction.DOWN, List.of());
+            // 所有方向给空列表(可变容器,见 newEmptyCulledFaces 的说明):
+            // SimpleBakedModel 对非 null direction 返回 culledFaces.get(dir),
+            // 缺方向会返回 null → collectQuads 的 addAll(null) 崩溃
+            Map<Direction, List<BakedQuad>> emptyByDir = newEmptyCulledFaces();
             // isGui3d=true:GUI 下盾牌本体是 3D 旋转薄板,走 renderGui3dInflate 的
             // "绕包围盒中心均匀放大壳"(与手持同一算法),对旋转薄板得到完整轮廓。
             model = new SimpleBakedModel(quads, emptyByDir,
@@ -1533,16 +1553,845 @@ public final class OutlineRenderer {
             addBox(quads, sprite, -0.5f * f, 0f, -0.5f * f, 0.5f * f, 4f * f, 0.5f * f);
             // right_spike: y -3..1 → -1..3
             addBox(quads, sprite, 1.5f * f, -1f * f, -0.5f * f, 2.5f * f, 3f * f, 0.5f * f);
-            Map<Direction, List<BakedQuad>> emptyByDir = Map.of(
-                    Direction.NORTH, List.of(), Direction.SOUTH, List.of(),
-                    Direction.EAST, List.of(), Direction.WEST, List.of(),
-                    Direction.UP, List.of(), Direction.DOWN, List.of());
+            // 所有方向给空列表(可变容器,见 newEmptyCulledFaces 的说明)
+            Map<Direction, List<BakedQuad>> emptyByDir = newEmptyCulledFaces();
             model = new SimpleBakedModel(quads, emptyByDir,
                     false, false, true, sprite, transforms, ItemOverrides.EMPTY);
             this.tridentModel = model;
             this.tridentTransforms = transforms;
         }
         return model;
+    }
+
+    /**
+     * 构造 SimpleBakedModel 用的 culledFaces:6 个方向全部映射到空列表,容器可变。
+     * <p>
+     * 不能用 {@code Map.of()}/{@code List.of()} 的不可变容器:FerriteCore 的
+     * {@code minimizeCulled} 在模型构造时会对传入的 culledFaces 调用 {@code put()}
+     * (把空列表替换为紧凑共享实例),不可变 Map 会抛 {@link UnsupportedOperationException}
+     * (崩溃栈:SimpleBakedModel.&lt;init&gt; → ferritecore$minimizeFaceLists →
+     * ModelSidesImpl.minimizeCulled → ImmutableCollections$AbstractImmutableMap.put)。
+     *
+     * @return 6 个方向均为可变空 ArrayList 的可变 HashMap
+     */
+    private static Map<Direction, List<BakedQuad>> newEmptyCulledFaces() {
+        Map<Direction, List<BakedQuad>> map = new HashMap<>();
+        for (Direction dir : Direction.values()) {
+            map.put(dir, new ArrayList<>());
+        }
+        return map;
+    }
+
+    /**
+     * BEWLR 物品(模型 parent 为 builtin/entity,{@code isCustomRenderer()==true})的
+     * <b>GUI/GROUND/FIXED</b> 描边模型解析。
+     * <p>
+     * 这类物品的占位模型没有几何,本体在这些上下文由模组或原版在
+     * {@code ItemRenderer.render} 内替换成<b>平面模型</b>渲染 —— 描边必须用同一个模型
+     * 才能与本体对齐。实测(2026-08-09,永恒星光 0.8.1)本体实际使用的 MRL 变体:
+     * <ol>
+     *   <li>{@code <ns>:item/<id>#standalone}(永恒星光 style:getSpecialModel 对
+     *       MRL.id().withPrefix("item/") + variant standalone,如
+     *       eternal_starlight:item/crescent_spear_inventory#standalone 是平面模型);</li>
+     *   <li>{@code <ns>:item/<id>#inventory};</li>
+     *   <li>{@code <ns>:<id>#standalone};</li>
+     *   <li>{@code <ns>:<id>_inventory#inventory}(部分模组的约定);</li>
+     *   <li>{@code <ns>:<id>#inventory}(原版风格,钓鱼竿 fishing_rod#inventory 就是
+     *       handheld 平面)。</li>
+     * </ol>
+     * 只接受<b>存在、非 missing、非 custom renderer</b> 的模型 —— builtin/entity 占位
+     * 模型会被拒绝,无可用平面变体时返回 null 由调用方跳过描边。
+     *
+     * @param stack 物品;仅当原模型 {@code isCustomRenderer()} 时调用
+     * @return 可描边的平面模型;无可用平面变体时返回 null
+     */
+    public static BakedModel inventoryModelFor(ItemStack stack) {
+        ResourceLocation id = BuiltInRegistries.ITEM.getKey(stack.getItem());
+        String ns = id.getNamespace();
+        String path = id.getPath();
+        ModelManager manager = Minecraft.getInstance().getItemRenderer().getItemModelShaper().getModelManager();
+        List<ModelResourceLocation> candidates = List.of(
+                // 永恒星光 style:item/<id>_inventory#standalone(本体 GUI 实际渲染用的模型,
+                // getSpecialModel 把 <id>_inventory MRL 的 id withPrefix("item/") + standalone)
+                new ModelResourceLocation(ResourceLocation.fromNamespaceAndPath(ns, "item/" + path + "_inventory"), "standalone"),
+                new ModelResourceLocation(ResourceLocation.fromNamespaceAndPath(ns, "item/" + path + "_inventory"), "inventory"),
+                new ModelResourceLocation(ResourceLocation.fromNamespaceAndPath(ns, path + "_inventory"), "standalone"),
+                // 通用约定:<id>_inventory#inventory / <id>#standalone / <id>#inventory
+                ModelResourceLocation.inventory(ResourceLocation.fromNamespaceAndPath(ns, path + "_inventory")),
+                new ModelResourceLocation(ResourceLocation.fromNamespaceAndPath(ns, path), "standalone"),
+                ModelResourceLocation.inventory(id));
+        for (ModelResourceLocation mrl : candidates) {
+            BakedModel model = manager.getModel(mrl);
+            if (isUsableInventoryModel(manager, model)) {
+                return model;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * inventory 模型是否可描边:存在、非 missing 占位、且本身不是 builtin/entity。
+     * missing 模型(紫黑方块)没有物品形状,直接用会把描边画成整块 16×16 实心方块。
+     */
+    private static boolean isUsableInventoryModel(ModelManager manager, BakedModel model) {
+        return model != null
+                && model != manager.getMissingModel()
+                && !model.isCustomRenderer();
+    }
+
+    // ==================== BEWLR 手持物品 3D 描边 ====================
+
+    /**
+     * BEWLR 手持物品 3D 描边放大系数(每厚度增量)。
+     * <p>
+     * 3D 描边是几何放大壳(scale = 1 + thickness×0.5×系数),外扩量 =
+     * (scale-1)×点到中心距离 → 细长武器多数面离中心近、外扩小,需要比扁平物品
+     * (像素偏移)更大的基础系数。旧硬编码 0.12 太弱,现读配置 {@link Config#BEWLR_3D_SCALE}
+     * (默认 0.3),玩家可调。
+     */
+    private static float bewlrInflatePerThickness() {
+        return Config.BEWLR_3D_SCALE.get().floatValue();
+    }
+
+    /**
+     * 已知持有 BEWLR 模型<b>静态字段</b>的类(模组适配表,按需扩展)。
+     * 字段名约定 = 物品路径大写(去 -/. )+ "_MODEL":
+     * <ul>
+     *   <li>永恒星光 {@code ESItemStackRenderer.CRESCENT_SPEAR_MODEL}(非 final,
+     *       首次渲染时延迟初始化);</li>
+     *   <li>灾变 {@code CMItemstackRenderer.THE_IMMOLATOR_MODEL} 等(final,
+     *       类加载时初始化)。</li>
+     * </ul>
+     * <p>
+     * ⚠️ <b>模组级预变换(2026-08-09 修复,描边错位根因)</b>:模组 BEWLR 渲染器在
+     * display transform 之后、renderToBuffer 之前,还会对模型套一层<b>内部预变换</b>
+     * (pushPose 内 translate/scale)。描边必须复刻同一预变换,否则描边模型与本体
+     * 错位/镜像。实测:
+     * <ul>
+     *   <li>永恒星光(ESItemStackRenderer):所有物品分支 {@code scale(1,-1,-1)};</li>
+     *   <li>灾变(CMItemstackRenderer):武器类 {@code translate(0.5,0.5,0.5) +
+     *       scale(1,-1,-1)}(个别方块类物品是 translate(0.5,1.5,0.5),不在武器描边范围)。</li>
+     * </ul>
+     */
+    private static final String[] BEWLR_MODEL_HOLDER_CLASSES = {
+            "cn.leolezury.eternalstarlight.common.client.renderer.ESItemStackRenderer", // 永恒星光:scale(1,-1,-1)
+            "com.github.L_Ender.cataclysm.client.render.CMItemstackRenderer",            // 灾变:translate(0.5,0.5,0.5)+scale(1,-1,-1)
+    };
+
+    /** 描边时 BEWLR 模型对象 + 来源模组的预变换类别 + 本体纹理(用于颜色混合,可为 null)。 */
+    private record BewlrModel(Object model, int preTransform, ResourceLocation texture) {
+        /** 无预变换(未知模组,仅缩放尝试)。 */
+        static final int NONE = 0;
+        /** 永恒星光:scale(1,-1,-1)。 */
+        static final int ES_FLIP = 1;
+        /** 灾变:translate(0.5,0.5,0.5) + scale(1,-1,-1)。 */
+        static final int CM_CENTER_FLIP = 2;
+    }
+
+    /**
+     * BEWLR 手持物品 3D 描边(月弧长枪/灾变武器等):
+     * 本体手持由模组 BEWLR 渲染自定义实体模型,这里反射其持有的模型对象做放大壳。
+     * <ul>
+     *   <li>标准 Mojang {@link Model} 子类(root 是 {@link ModelPart},如永恒星光
+     *       CrescentSpearModel)→ 复用 {@link #renderEntityModelOutline} 逐 cube 放大壳;</li>
+     *   <li>LionfishAPI 骨骼(root 是 AdvancedModelBox,如灾变)→ 整体包围盒放大壳
+     *       ({@link #renderLionfishInflated})。</li>
+     * </ul>
+     * 无可用模型时返回 false,调用方跳过描边(与修复前行为一致)。
+     *
+     * @param stack     物品(BEWLR)
+     * @param pose      已复刻 display transform 的 PoseStack(与本体同变换)
+     * @param color     描边 ARGB
+     * @param thickness 描边厚度(像素语义)
+     * @return true = 已绘制描边
+     */
+    public boolean renderBewlrEntityOutline(ItemStack stack, PoseStack pose, int color, float thickness) {
+        if (thickness <= 0f || this.outlineShader == null) {
+            return false;
+        }
+        BewlrModel found = findBewlrModel(stack);
+        if (found == null || found.model() == null) {
+            return false;
+        }
+        Object model = found.model();
+        // ⚠️ 复刻 BEWLR 渲染器内部的模组级预变换(本体在 display 后 pushPose→translate→scale
+        // →renderToBuffer→popPose)。描边必须在<b>同一预变换之后</b>做放大壳,否则
+        // 描边模型与本体错位/镜像(2026-08-09 修复:长枪/灾变武器轮廓偏移翻转)。
+        pose.pushPose();
+        try {
+            applyBewlrPreTransform(pose, found.preTransform());
+            // 本体纹理(如 CrescentSpearModel.TEXTURE / CMItemstackRenderer.THE_IMMOLATOR_TEXTURE)
+            // 用于<b>颜色混合</b>:描边颜色 = 贴图像素色 × 描边色(与扁平/盔甲混色开关一致);
+            // 拿不到时回退纯白(纯描边色)。
+            ResourceLocation tex = found.texture() != null ? found.texture() : WHITE_TEXTURE;
+            // 先试标准 Mojang Model:root 字段是 ModelPart(永恒星光 CrescentSpearModel 等)。
+            // 灾变 AdvancedEntityModel 也继承 Model,但其 root 是 LionfishAPI AdvancedModelBox
+            // (非 ModelPart)→ 反射强转失败返回 null,此时走 Lionfish 分支。
+            if (model instanceof Model mojang) {
+                ModelPart root = modelRootOf(mojang);
+                if (root != null) {
+                    renderEntityModelOutline(pose, new ModelPart[]{root}, tex,
+                            bewlrInflatePerThickness(), color, thickness);
+                    return true;
+                }
+            }
+            // LionfishAPI 骨骼模型(灾变)→ 默认逐 cube 顶点法线外扩(等厚贴身、
+            // 端部不膨胀);失败(反射/字段缺失)或配置关闭时回退整体包围盒放大壳
+            // (旧算法,见 {@link #renderLionfishInflated})——保证任意 LionfishAPI
+            // 版本都有描边(向前向后兼容)。
+            if (Config.BEWLR_3D_PER_CUBE.get()) {
+                if (renderLionfishPerCube(pose, model, tex, color, thickness)) {
+                    return true;
+                }
+            }
+            return renderLionfishInflated(pose, model, tex, color, thickness);
+        } finally {
+            pose.popPose();
+        }
+    }
+
+    /**
+     * 应用 BEWLR 渲染器内部的模组级预变换(见 {@link #BEWLR_MODEL_HOLDER_CLASSES} 注释)。
+     * 顺序与本体 BEWLR 分支一致:先 translate 后 scale。
+     */
+    private static void applyBewlrPreTransform(PoseStack pose, int preTransform) {
+        switch (preTransform) {
+            case BewlrModel.ES_FLIP -> pose.scale(1.0f, -1.0f, -1.0f);
+            case BewlrModel.CM_CENTER_FLIP -> {
+                pose.translate(0.5f, 0.5f, 0.5f);
+                pose.scale(1.0f, -1.0f, -1.0f);
+            }
+            default -> {
+            }
+        }
+    }
+
+    /** 反射读取 BEWLR 模型 + 来源模组的预变换类别。 */
+    private BewlrModel findBewlrModel(ItemStack stack) {
+        String path = BuiltInRegistries.ITEM.getKey(stack.getItem()).getPath();
+        String fieldName = path.toUpperCase(Locale.ROOT).replace('-', '_').replace('.', '_') + "_MODEL";
+        BewlrModel found = readBewlrModelField(fieldName);
+        if (found == null) {
+            // 永恒星光等模组延迟初始化模型字段:触发一次 BEWLR 渲染使其创建
+            ensureBewlrModelsLoaded(stack);
+            found = readBewlrModelField(fieldName);
+        }
+        return found;
+    }
+
+    /** 遍历 {@link #BEWLR_MODEL_HOLDER_CLASSES},沿父类链反射读静态字段。 */
+    /**
+     * 遍历 {@link #BEWLR_MODEL_HOLDER_CLASSES},沿父类链反射读静态字段
+     * (模型 + 预变换类别 + 本体纹理)。纹理字段约定 = 物品路径大写 + "_TEXTURE"
+     * (优先查持有类,如灾变 CMItemstackRenderer.THE_IMMOLATOR_TEXTURE;回退模型类,
+     * 如永恒星光 CrescentSpearModel.TEXTURE)。
+     */
+    private BewlrModel readBewlrModelField(String fieldName) {
+        for (String cls : BEWLR_MODEL_HOLDER_CLASSES) {
+            int preTransform;
+            if (cls.startsWith("cn.leolezury.eternalstarlight")) {
+                preTransform = BewlrModel.ES_FLIP;
+            } else if (cls.startsWith("com.github.L_Ender.cataclysm")) {
+                preTransform = BewlrModel.CM_CENTER_FLIP;
+            } else {
+                preTransform = BewlrModel.NONE;
+            }
+            try {
+                Class<?> c = Class.forName(cls);
+                Field f = findField(c, fieldName);
+                if (f == null) {
+                    continue;
+                }
+                f.setAccessible(true);
+                Object v = f.get(null);
+                if (v != null) {
+                    // 本体纹理(颜色混合):优先持有类静态 <ID>_TEXTURE,回退模型类 TEXTURE
+                    String textureField = fieldName.replace("_MODEL", "_TEXTURE");
+                    ResourceLocation tex = readTextureField(c, textureField);
+                    if (tex == null) {
+                        tex = readTextureField(v.getClass(), "TEXTURE");
+                    }
+                    return new BewlrModel(v, preTransform, tex);
+                }
+            } catch (Exception ignored) {
+                // 类不存在/字段不符/访问失败:跳过该模组适配
+            }
+        }
+        return null;
+    }
+
+    /** 读类的静态 ResourceLocation 字段(沿父类链),失败返回 null。 */
+    private static ResourceLocation readTextureField(Class<?> clazz, String name) {
+        try {
+            Field f = findField(clazz, name);
+            if (f == null) {
+                return null;
+            }
+            f.setAccessible(true);
+            Object v = f.get(null);
+            return v instanceof ResourceLocation rl ? rl : null;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    /**
+     * 触发 BEWLR 渲染一次以初始化其内部模型字段(渲染输出到临时 buffer,不 flush,
+     * 无视觉副作用)。仅当模型字段为 null(延迟初始化模组)时调用。
+     */
+    private void ensureBewlrModelsLoaded(ItemStack stack) {
+        try {
+            IClientItemExtensions ext = IClientItemExtensions.of(stack);
+            BlockEntityWithoutLevelRenderer bewlr = ext.getCustomRenderer();
+            if (bewlr == null) {
+                return;
+            }
+            MultiBufferSource.BufferSource tmp = MultiBufferSource.immediate(new ByteBufferBuilder(1024));
+            try {
+                bewlr.renderByItem(stack, ItemDisplayContext.NONE, new PoseStack(), tmp,
+                        0xF000F0, OverlayTexture.NO_OVERLAY);
+                tmp.endBatch();
+            } catch (Exception ignored) {
+                // 某些 BEWLR 渲染依赖 world/player 上下文,失败不影响描边
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    /** 读取 Mojang {@link Model} 的 root ModelPart 字段(沿父类链)。 */
+    private ModelPart modelRootOf(Model model) {
+        try {
+            Field f = findField(model.getClass(), "root");
+            if (f == null) {
+                return null;
+            }
+            f.setAccessible(true);
+            return (ModelPart) f.get(model);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    // ==================== Lionfish 逐 cube 顶点法线外扩 ====================
+
+    /**
+     * Lionfish cube 静态几何的 WeakHashMap 缓存(ModelBox → 展开几何,弱引用:
+     * 模型被 GC 时条目自动清除)。位置/UV/法线均与帧无关,可安全缓存
+     * (AGENTS.md 性能纪律:只缓存与帧无关的输入;部件变换由 PoseStack 提供)。
+     */
+    private final Map<Object, ExpandedLionfishCube> lionfishCubeCache = new WeakHashMap<>();
+
+    /**
+     * LionfishAPI 骨骼模型(灾变等)<b>逐 cube 顶点法线外扩</b>描边(默认算法)。
+     * <p>
+     * 与整体放大壳({@link #renderLionfishInflated})不同,这里<b>精确复刻本体</b>
+     * {@code BasicModelPart.render} 的变换链(translate(rotationPoint/16) →
+     * mulPose(rotationZYX) → scale(xScale,yScale,zScale)),在每个部件<b>局部
+     * 坐标系</b>内把 cube 的 24 个 quad 顶点沿<b>聚合顶点法线</b>(相邻面法线
+     * 平均后归一化)外扩固定距离 offset 再写入描边 buffer:
+     * <ul>
+     *   <li><b>等厚贴身</b>:offset 与顶点到整体中心的距离无关 → 细长武器
+     *       (枪杆/刀身)端部不再随整体长度膨胀,各部件描边粗细均匀;</li>
+     *   <li><b>无裂缝</b>:cube 24 个 quad 顶点按位置聚合为 8 个角点,每组面法线
+     *       累加归一化 → 共享顶点在相邻面上外扩方向一致,面间不裂开;</li>
+     *   <li><b>UV 与本体一致</b>:直接复用 {@code PositionTextureVertex.textureU/V}
+     *       (构造时已按 textureOffset 算好的归一化 UV),描边 alpha 遮罩形状与
+     *       本体完全重合;</li>
+     *   <li><b>静态几何缓存</b>:位置/UV/法线由 {@link #lionfishCubeCache} 缓存
+     *       ({@link ExpandedLionfishCube}),每帧只做矩阵变换与顶点写入,零反射。</li>
+     * </ul>
+     * cube 坐标与 rotationPoint 均为<b>像素单位</b>(渲染时 ÷16 转模型单位);
+     * offset 以模型单位计 = thickness × THICKNESS_SCALE × bewlrInflatePerThickness()
+     * (与整体壳 (scale-1) 语义等价,但位移固定不随距离放大)。
+     *
+     * @param pose      已复刻 display transform 的 PoseStack
+     * @param model     LionfishAPI 模型对象(AdvancedEntityModel 子类,如灾变武器)
+     * @param texture   本体纹理(颜色混合)
+     * @param color     描边 ARGB
+     * @param thickness 描边厚度(像素语义)
+     * @return true = 已绘制描边
+     */
+    private boolean renderLionfishPerCube(PoseStack pose, Object model, ResourceLocation texture,
+                                          int color, float thickness) {
+        try {
+            Object root = lionfishRootOf(model);
+            if (root == null) {
+                return false;
+            }
+            setOutlineAlphaBoost(2.0f);
+            int packedColor = 0xFF000000 | (color & 0xFFFFFF);
+            // 顶点外扩距离(模型单位):位移固定 → 等厚贴身,端部不膨胀
+            float offset = thickness * THICKNESS_SCALE * bewlrInflatePerThickness();
+            VertexConsumer consumer = outlineBuffers.getBuffer(armorOutlineRenderType(texture, color));
+            pose.pushPose();
+            int drawn = 0;
+            try {
+                drawn = renderLionfishPart(pose, root, consumer, packedColor, offset);
+            } finally {
+                pose.popPose();
+            }
+            if (drawn <= 0) {
+                // 没有可渲染的 cube(反射失败 / 无 quads)→ 未 endBatch,无副作用,
+                // 返回 false 由调用方回退整体放大壳,保证其他 LionfishAPI 版本仍有描边
+                return false;
+            }
+            outlineBuffers.endBatch();
+            return true;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    /**
+     * 递归渲染 Lionfish 部件树,<b>逐部件复刻 {@code BasicModelPart.render}
+     * 变换链</b>:
+     * <pre>pushPose → translate(rotationPoint/16) → mulPose(rotationZYX(z,y,x)) →
+     * scale(xScale,yScale,zScale) → [本部件 cubes] → [子部件递归] → popPose</pre>
+     * rotationPoint 与 cube 坐标均为像素单位,渲染时 ÷16 转模型单位。
+     *
+     * @param pose        当前 PoseStack(已含父级变换)
+     * @param part        LionfishAPI 部件(BasicModelPart 或子类)
+     * @param consumer    描边顶点写入目标
+     * @param packedColor 描边色(ABGR 打包)
+     * @param offset      顶点外扩距离(模型单位)
+     * @return 实际渲染的 cube 数(0 = 无 cube 可渲染,调用方应回退整体壳)
+     */
+    private int renderLionfishPart(PoseStack pose, Object part, VertexConsumer consumer,
+                                   int packedColor, float offset) {
+        int drawn = 0;
+        pose.pushPose();
+        try {
+            // translateAndRotate 复刻(rotationPoint ÷16 转模型单位)
+            pose.translate(partFieldF(part, "rotationPointX") / 16f,
+                    partFieldF(part, "rotationPointY") / 16f,
+                    partFieldF(part, "rotationPointZ") / 16f);
+            float ax = partFieldF(part, "rotateAngleX");
+            float ay = partFieldF(part, "rotateAngleY");
+            float az = partFieldF(part, "rotateAngleZ");
+            if (ax != 0f || ay != 0f || az != 0f) {
+                pose.mulPose(new Quaternionf().rotationZYX(az, ay, ax));
+            }
+            float xs = partFieldF(part, "xScale");
+            float ys = partFieldF(part, "yScale");
+            float zs = partFieldF(part, "zScale");
+            if (xs != 1f || ys != 1f || zs != 1f) {
+                pose.scale(xs, ys, zs);
+            }
+            Field cubesField = findField(part.getClass(), "cubeList");
+            if (cubesField != null) {
+                cubesField.setAccessible(true);
+                Object list = cubesField.get(part);
+                if (list instanceof List<?> cubes) {
+                    for (Object cube : cubes) {
+                        if (renderLionfishCube(pose, cube, consumer, packedColor, offset)) {
+                            drawn++;
+                        }
+                    }
+                }
+            }
+            Field childrenField = findField(part.getClass(), "childModels");
+            if (childrenField != null) {
+                childrenField.setAccessible(true);
+                Object children = childrenField.get(part);
+                if (children instanceof List<?> childList) {
+                    for (Object child : childList) {
+                        drawn += renderLionfishPart(pose, child, consumer, packedColor, offset);
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            // 单部件反射失败:跳过该部件,不影响其余部件与描边
+        } finally {
+            pose.popPose();
+        }
+        return drawn;
+    }
+
+    /**
+     * 渲染单个 Lionfish cube 的描边:24 个 quad 顶点(6 面 × 4)逐一沿<b>聚合顶点
+     * 法线</b>外扩 offset 后,经当前 PoseStack 矩阵变换写入描边 buffer。
+     * 静态几何(坐标/UV/法线)由 {@link #lionfishCubeCache} 缓存,此处零反射。
+     */
+    private boolean renderLionfishCube(PoseStack pose, Object cube, VertexConsumer consumer,
+                                       int packedColor, float offset) {
+        ExpandedLionfishCube ec = lionfishCubeCache.get(cube);
+        if (ec == null) {
+            ec = buildExpandedLionfishCube(cube);
+            if (ec == null) {
+                return false;
+            }
+            lionfishCubeCache.put(cube, ec);
+        }
+        Matrix4f poseMatrix = pose.last().pose();
+        Vector3f tmp = new Vector3f(); // 复用,避免每顶点分配
+        for (int i = 0; i < ExpandedLionfishCube.QUAD_VERTICES; i++) {
+            Vector3f p = poseMatrix.transformPosition(
+                    ec.x[i] + ec.nx[i] * offset,
+                    ec.y[i] + ec.ny[i] * offset,
+                    ec.z[i] + ec.nz[i] * offset, tmp);
+            consumer.addVertex(p.x(), p.y(), p.z(), packedColor,
+                    ec.u[i], ec.v[i], OverlayTexture.NO_OVERLAY, FULL_BRIGHT,
+                    ec.nx[i], ec.ny[i], ec.nz[i]);
+        }
+        return true;
+    }
+
+    /**
+     * Lionfish cube 的<b>静态几何缓存</b>(只依赖局部坐标,与帧无关):
+     * 24 个 quad 顶点的局部坐标(已 ÷16 转模型单位)、UV(与本体一致)、
+     * <b>聚合顶点法线</b>(相邻面法线平均后归一化,即外扩方向)。
+     * 部件变换(rotationPoint/rotateAngle/xScale)每帧由 PoseStack 提供,不入缓存。
+     */
+    private static final class ExpandedLionfishCube {
+        /** 6 面 × 4 顶点 = 24。 */
+        static final int QUAD_VERTICES = 24;
+
+        final float[] x = new float[QUAD_VERTICES];
+        final float[] y = new float[QUAD_VERTICES];
+        final float[] z = new float[QUAD_VERTICES];
+        final float[] u = new float[QUAD_VERTICES];
+        final float[] v = new float[QUAD_VERTICES];
+        final float[] nx = new float[QUAD_VERTICES];
+        final float[] ny = new float[QUAD_VERTICES];
+        final float[] nz = new float[QUAD_VERTICES];
+    }
+
+    /**
+     * 构建 cube 静态几何缓存:反射读取 {@code ModelBox.quads}(TexturedQuad[]),
+     * 每 quad 的 {@code normal}(面法线)与 4 个 {@code PositionTextureVertex}
+     * (position 像素 / textureU,V)。
+     * <p>
+     * <b>顶点法线聚合</b>:cube 的 24 个 quad 顶点中,同一位置(8 个角点)出现在
+     * 3 个相邻面上,若直接用所属面法线外扩,共享顶点会外扩到不同位置 → 面间裂缝。
+     * 这里按位置(float 精确相等,同 cube 内同一角点的坐标值必然逐位相同)分组,
+     * 累加每组的面法线并归一化得到顶点法线 —— 所有共享该角点的 quad 顶点沿同一
+     * 方向外扩,无缝且等厚。
+     *
+     * @param cube LionfishAPI ModelBox 对象
+     * @return 静态几何缓存;反射失败返回 null(调用方跳过该 cube)
+     */
+    private ExpandedLionfishCube buildExpandedLionfishCube(Object cube) {
+        try {
+            Field quadsField = findField(cube.getClass(), "quads");
+            if (quadsField == null) {
+                return null;
+            }
+            quadsField.setAccessible(true);
+            Object[] quads = (Object[]) quadsField.get(cube);
+            if (quads == null || quads.length == 0) {
+                return null;
+            }
+            final int n = quads.length * 4;
+            // 预读全部顶点位置(像素)与 UV,分组/输出阶段零重复反射(一次性成本)
+            float[][] pos = new float[n][];
+            float[] us = new float[n], vs = new float[n];
+            for (int i = 0; i < n; i++) {
+                pos[i] = lionfishVertexPositionOf(quads, i);
+                float[] uv = lionfishUvOf(quads, i);
+                us[i] = uv[0];
+                vs[i] = uv[1];
+            }
+            // 1) 按位置分组:位置完全相等(同一 float 值)的顶点归一组(同一角点)
+            int[] group = new int[n];
+            float[] gx = new float[n], gy = new float[n], gz = new float[n];
+            Arrays.fill(group, -1);
+            int numGroups = 0;
+            for (int i = 0; i < n; i++) {
+                if (group[i] >= 0) {
+                    continue;
+                }
+                float[] p = pos[i];
+                group[i] = numGroups;
+                gx[numGroups] = p[0];
+                gy[numGroups] = p[1];
+                gz[numGroups] = p[2];
+                for (int j = i + 1; j < n; j++) {
+                    if (group[j] >= 0) {
+                        continue;
+                    }
+                    float[] q = pos[j];
+                    if (q[0] == p[0] && q[1] == p[1] && q[2] == p[2]) {
+                        group[j] = numGroups;
+                    }
+                }
+                numGroups++;
+            }
+            // 2) 每顶点累加所属 quad 的面法线(3 个相邻面 → 顶点法线方向)
+            float[] ax = new float[numGroups], ay = new float[numGroups], az = new float[numGroups];
+            for (int i = 0; i < n; i++) {
+                Vector3f qn = lionfishQuadNormalOf(quads[i / 4]);
+                int g = group[i];
+                ax[g] += qn.x();
+                ay[g] += qn.y();
+                az[g] += qn.z();
+            }
+            // 3) 归一化 + 输出缓存(坐标 ÷16 转模型单位,UV 与本体一致)
+            ExpandedLionfishCube out = new ExpandedLionfishCube();
+            for (int i = 0; i < n; i++) {
+                float[] p = pos[i];
+                int g = group[i];
+                float len = (float) Math.sqrt(ax[g] * ax[g] + ay[g] * ay[g] + az[g] * az[g]);
+                float inv = len > 1e-6f ? 1f / len : 0f;
+                out.x[i] = p[0] / 16f;
+                out.y[i] = p[1] / 16f;
+                out.z[i] = p[2] / 16f;
+                out.nx[i] = ax[g] * inv;
+                out.ny[i] = ay[g] * inv;
+                out.nz[i] = az[g] * inv;
+                out.u[i] = us[i];
+                out.v[i] = vs[i];
+            }
+            return out;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    /** 读 quad 数组第 idx 个顶点的像素坐标 [x, y, z](PositionTextureVertex.position)。 */
+    private static float[] lionfishVertexPositionOf(Object[] quads, int idx) throws Exception {
+        Vector3f pos = lionfishVertexPosition(lionfishVertexOf(quads[idx / 4], idx % 4));
+        return new float[]{pos.x(), pos.y(), pos.z()};
+    }
+
+    /** 读 quad 的归一化 UV [u, v](PositionTextureVertex.textureU/V,与本体一致)。 */
+    private static float[] lionfishUvOf(Object[] quads, int idx) throws Exception {
+        Object vtx = lionfishVertexOf(quads[idx / 4], idx % 4);
+        Field fu = findField(vtx.getClass(), "textureU");
+        fu.setAccessible(true);
+        Field fv = findField(vtx.getClass(), "textureV");
+        fv.setAccessible(true);
+        return new float[]{fu.getFloat(vtx), fv.getFloat(vtx)};
+    }
+
+    /** 读 quad 的 4 个 PositionTextureVertex 中第 idx 个。 */
+    private static Object lionfishVertexOf(Object quad, int idx) throws Exception {
+        Field f = findField(quad.getClass(), "vertexPositions");
+        f.setAccessible(true);
+        return ((Object[]) f.get(quad))[idx];
+    }
+
+    /** 读顶点的像素坐标(org.joml.Vector3f)。 */
+    private static Vector3f lionfishVertexPosition(Object vtx) throws Exception {
+        Field f = findField(vtx.getClass(), "position");
+        f.setAccessible(true);
+        return (Vector3f) f.get(vtx);
+    }
+
+    /** 读 quad 的面法线(TexturedQuad.normal,已归一化)。 */
+    private static Vector3f lionfishQuadNormalOf(Object quad) throws Exception {
+        Field f = findField(quad.getClass(), "normal");
+        f.setAccessible(true);
+        return (Vector3f) f.get(quad);
+    }
+
+    /**
+     * ⚠️ 旧算法 / 回退路径:默认已由 {@link #renderLionfishPerCube} 逐 cube 顶点
+     * 法线外扩取代(Config.BEWLR_3D_PER_CUBE = false 时启用本路径)。
+     * <p>
+     * LionfishAPI 骨骼模型(灾变等)整体放大壳:
+     * <ol>
+     *   <li>拿 root(优先调用 {@code root()} 方法,回退 {@code root} 字段);</li>
+     *   <li>递归收集全部 cube({@code cubeList},字段 {@code posX1..posZ2})的包围盒,
+     *       <b>并累加每级部件的 {@code rotationPointX/Y/Z}(代码偏移)</b> → 全局像素 AABB;</li>
+     *   <li>中心 ÷16 转模型单位(⚠️ cube 坐标是像素,渲染时 Lionfish 内部 ÷16,不改会
+     *       错位 16 倍),在 PoseStack 上 T(c)·S·T(-c),调用 {@code root.render(pose,
+     *       consumer, light, overlay)} 渲染放大壳(几何形状由放大决定,纹理 = 本体
+     *       贴图(颜色混合)或纯白)。</li>
+     * </ol>
+     * 整体放大对细长武器远端外扩略多(外扩 = (scale-1)×到中心距离),但形状贴合、
+     * 描边可见;保留用于对比与回退(新算法见 {@link #renderLionfishPerCube})。
+     */
+    private boolean renderLionfishInflated(PoseStack pose, Object model, ResourceLocation texture,
+                                           int color, float thickness) {
+        try {
+            Object root = lionfishRootOf(model);
+            if (root == null) {
+                return false;
+            }
+            // 像素单位全局 AABB(已含各部件 rotationPoint 代码偏移)
+            float[] bb = lionfishBounds(root, 0f, 0f, 0f);
+            if (bb == null) {
+                return false;
+            }
+            // ⚠️ cube 坐标是像素单位,渲染时 Lionfish 内部 ÷16 → 中心必须 ÷16 转模型单位,
+            // 否则描边壳偏出本体 16 倍(2026-08-09 灾变描边错位根因)。
+            float cx = (bb[0] + bb[3]) / 2f / 16f;
+            float cy = (bb[1] + bb[4]) / 2f / 16f;
+            float cz = (bb[2] + bb[5]) / 2f / 16f;
+            setOutlineAlphaBoost(2.0f);
+            int packedColor = 0xFF000000 | (color & 0xFFFFFF);
+            float scale = 1.0f + thickness * THICKNESS_SCALE * bewlrInflatePerThickness();
+            VertexConsumer consumer = outlineBuffers.getBuffer(armorOutlineRenderType(texture, color));
+            pose.pushPose();
+            try {
+                pose.translate(cx, cy, cz);
+                pose.scale(scale, scale, scale);
+                pose.translate(-cx, -cy, -cz);
+                Method render = findMethod(root.getClass(), "render",
+                        PoseStack.class, VertexConsumer.class, int.class, int.class);
+                if (render == null) {
+                    return false;
+                }
+                render.setAccessible(true);
+                render.invoke(root, pose, consumer, FULL_BRIGHT, OverlayTexture.NO_OVERLAY);
+            } finally {
+                pose.popPose();
+            }
+            outlineBuffers.endBatch();
+            return true;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    /** LionfishAPI 模型 root:优先调用 {@code root()} 方法,回退 {@code root} 字段。 */
+    private Object lionfishRootOf(Object model) {
+        try {
+            Method m = findMethod(model.getClass(), "root");
+            if (m != null) {
+                m.setAccessible(true);
+                Object v = m.invoke(model);
+                if (v != null) {
+                    return v;
+                }
+            }
+            Field f = findField(model.getClass(), "root");
+            if (f != null) {
+                f.setAccessible(true);
+                Object v = f.get(model);
+                if (v != null) {
+                    return v;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    /**
+     * 递归收集 LionfishAPI 部件树的全部 cube 包围盒(<b>全局像素 AABB</b>)。
+     * <p>
+     * {@code cubeList} 是 {@code ObjectList<...ModelBox>}(实现 {@link List}),
+     * cube 有公开字段 {@code posX1..posZ2}(<b>像素单位</b>,渲染时 Lionfish 内部 ÷16);
+     * 子部件在 {@code childModels}。
+     * <p>
+     * ⚠️ <b>代码偏移</b>:每个部件的 {@code rotationPointX/Y/Z} 是其相对父级的平移
+     * (BasicModelPart 公开字段,像素单位)。cube 坐标是相对所属部件的局部坐标,
+     * 必须沿父链累加 rotationPoint 才能得到全局 AABB —— 否则多部件武器(刀柄+刀身
+     * 分属不同部件)的整体中心算错,描边壳与本体错位。
+     *
+     * @param part 当前部件
+     * @param ox   父链累计的 rotationPointX(像素)
+     * @param oy   父链累计的 rotationPointY(像素)
+     * @param oz   父链累计的 rotationPointZ(像素)
+     * @return [minX, minY, minZ, maxX, maxY, maxZ](像素,含偏移);无 cube 时 null
+     */
+    @SuppressWarnings("unchecked")
+    private float[] lionfishBounds(Object part, float ox, float oy, float oz) {
+        float[] bb = null;
+        try {
+            // 本部件相对父级的代码偏移(rotationPointX/Y/Z 是 BasicModelPart 公开字段)
+            float px = ox + partFieldF(part, "rotationPointX");
+            float py = oy + partFieldF(part, "rotationPointY");
+            float pz = oz + partFieldF(part, "rotationPointZ");
+            Field cubesField = part.getClass().getDeclaredField("cubeList");
+            cubesField.setAccessible(true);
+            Object list = cubesField.get(part);
+            if (list instanceof List<?> cubes) {
+                for (Object cube : cubes) {
+                    float x1 = px + cubeFieldF(cube, "posX1"), y1 = py + cubeFieldF(cube, "posY1"), z1 = pz + cubeFieldF(cube, "posZ1");
+                    float x2 = px + cubeFieldF(cube, "posX2"), y2 = py + cubeFieldF(cube, "posY2"), z2 = pz + cubeFieldF(cube, "posZ2");
+                    if (bb == null) {
+                        bb = new float[]{x1, y1, z1, x2, y2, z2};
+                    } else {
+                        bb[0] = Math.min(bb[0], x1);
+                        bb[1] = Math.min(bb[1], y1);
+                        bb[2] = Math.min(bb[2], z1);
+                        bb[3] = Math.max(bb[3], x2);
+                        bb[4] = Math.max(bb[4], y2);
+                        bb[5] = Math.max(bb[5], z2);
+                    }
+                }
+            }
+            Field childrenField = part.getClass().getDeclaredField("childModels");
+            childrenField.setAccessible(true);
+            Object children = childrenField.get(part);
+            if (children instanceof List<?> childList) {
+                for (Object child : childList) {
+                    float[] cb = lionfishBounds(child, px, py, pz);
+                    if (cb == null) {
+                        continue;
+                    }
+                    if (bb == null) {
+                        bb = cb;
+                    } else {
+                        bb[0] = Math.min(bb[0], cb[0]);
+                        bb[1] = Math.min(bb[1], cb[1]);
+                        bb[2] = Math.min(bb[2], cb[2]);
+                        bb[3] = Math.max(bb[3], cb[3]);
+                        bb[4] = Math.max(bb[4], cb[4]);
+                        bb[5] = Math.max(bb[5], cb[5]);
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return bb;
+    }
+
+    /** 读部件公开 float 字段(BasicModelPart.rotationPointX/Y/Z 等),失败返回 0。 */
+    private static float partFieldF(Object part, String name) {
+        try {
+            Field f = part.getClass().getField(name);
+            return f.getFloat(part);
+        } catch (Exception ignored) {
+            return 0f;
+        }
+    }
+
+    private static float cubeFieldF(Object cube, String name) {
+        try {
+            Field f = cube.getClass().getField(name); // 公开字段
+            return f.getFloat(cube);
+        } catch (Exception ignored) {
+            return 0f;
+        }
+    }
+
+    /** 沿类链向上查找字段(父类声明的私有字段对子类实例同样可读)。 */
+    private static Field findField(Class<?> clazz, String name) {
+        for (Class<?> c = clazz; c != null && c != Object.class; c = c.getSuperclass()) {
+            try {
+                return c.getDeclaredField(name);
+            } catch (NoSuchFieldException ignored) {
+            }
+        }
+        return null;
+    }
+
+    /** 查找参数匹配的方法(参数为 null 的位不参与匹配)。 */
+    private static Method findMethod(Class<?> clazz, String name, Class<?>... paramTypes) {
+        for (Class<?> c = clazz; c != null && c != Object.class; c = c.getSuperclass()) {
+            for (Method m : c.getDeclaredMethods()) {
+                if (!m.getName().equals(name)) {
+                    continue;
+                }
+                Class<?>[] pts = m.getParameterTypes();
+                boolean match = paramTypes.length == pts.length;
+                if (match) {
+                    for (int i = 0; i < pts.length; i++) {
+                        if (paramTypes[i] != null && !paramTypes[i].isAssignableFrom(pts[i])) {
+                            match = false;
+                            break;
+                        }
+                    }
+                }
+                if (match) {
+                    return m;
+                }
+            }
+        }
+        return null;
     }
 
     /** 构造一个轴对齐盒的 6 个面 quad(全部进 unculled 列表)。 */
@@ -1640,13 +2489,16 @@ public final class OutlineRenderer {
         // 用 part.visit 遍历:自动处理部件间的父子变换(如 head→hat)。
         pose.pushPose();
         try {
-            renderPartInflated(pose, model.head, consumer, packedColor, scale);
-            renderPartInflated(pose, model.hat, consumer, packedColor, scale);
-            renderPartInflated(pose, model.body, consumer, packedColor, scale);
-            renderPartInflated(pose, model.rightArm, consumer, packedColor, scale);
-            renderPartInflated(pose, model.leftArm, consumer, packedColor, scale);
-            renderPartInflated(pose, model.rightLeg, consumer, packedColor, scale);
-            renderPartInflated(pose, model.leftLeg, consumer, packedColor, scale);
+            // uniform = 盔甲描边启用固定厚度(Config.ARMOR_UNIFORM_EXPAND);
+            // 鞘翅/投掷物等走本方法时传 false,保持原视觉(向后兼容)
+            boolean uniform = Config.ARMOR_UNIFORM_EXPAND.get();
+            renderPartInflated(pose, model.head, consumer, packedColor, scale, uniform, ARMOR_REF_DIAG);
+            renderPartInflated(pose, model.hat, consumer, packedColor, scale, uniform, ARMOR_REF_DIAG);
+            renderPartInflated(pose, model.body, consumer, packedColor, scale, uniform, ARMOR_REF_DIAG);
+            renderPartInflated(pose, model.rightArm, consumer, packedColor, scale, uniform, ARMOR_REF_DIAG);
+            renderPartInflated(pose, model.leftArm, consumer, packedColor, scale, uniform, ARMOR_REF_DIAG);
+            renderPartInflated(pose, model.rightLeg, consumer, packedColor, scale, uniform, ARMOR_REF_DIAG);
+            renderPartInflated(pose, model.leftLeg, consumer, packedColor, scale, uniform, ARMOR_REF_DIAG);
         } finally {
             pose.popPose();
         }
@@ -1663,9 +2515,24 @@ public final class OutlineRenderer {
      * <p>
      * <b>性能</b>:visit 回调是每帧每 cube 调用的热路径,复用局部 Matrix4f 临时对象
      * (而非每 cube 新建 3 个),JOML 的矩阵变换是纯计算,不保留引用 → 复用安全。
+     * <p>
+     * <b>固定厚度 uniform=true</b>(盔甲/鞘翅启用,{@link Config#ARMOR_UNIFORM_EXPAND}):
+     * 放大壳外扩量 = (scale-1)×cube 半对角线,大 cube 描边厚、模组细分模型
+     * (如永恒星光热泉石盔甲/鞘翅翼尖)小 cube 描边明显偏薄。开启后每个 cube 的
+     * scale 改为<b>按自身尺寸自适应</b>:perCubeScale = 1+(scale-1)×refDiag/自身
+     * 半对角线,使所有部件的表面外扩量一致(参考半对角线 refDiag 由调用方指定,
+     * 取该模型主 cube 的半对角线 → 视觉与主 cube 一致,细分部分补足到相同厚度)。
+     *
+     * @param pose        渲染 PoseStack(已含部件变换)
+     * @param part        盔甲部件 ModelPart
+     * @param consumer    顶点写入目标
+     * @param packedColor 描边色(ABGR 打包)
+     * @param scale       基础放大系数(1 + thickness×THICKNESS_SCALE×inflate)
+     * @param uniform     true = 按 cube 尺寸自适应(等厚);false = 固定 scale(旧行为)
+     * @param refDiag     均匀外扩的参考半对角线(模型单位,仅 uniform=true 时用)
      */
     private static void renderPartInflated(PoseStack pose, ModelPart part, VertexConsumer consumer,
-                                           int packedColor, float scale) {
+                                           int packedColor, float scale, boolean uniform, float refDiag) {
         if (part == null || !part.visible) {
             return;
         }
@@ -1676,11 +2543,22 @@ public final class OutlineRenderer {
             float cx = (cube.minX + cube.maxX) / 2.0f / 16.0f;
             float cy = (cube.minY + cube.maxY) / 2.0f / 16.0f;
             float cz = (cube.minZ + cube.maxZ) / 2.0f / 16.0f;
+            // 自适应放大系数:小 cube 补足外扩量,使表面外扩厚度与参考一致
+            float perCubeScale = scale;
+            if (uniform) {
+                float dx = (cube.maxX - cube.minX) / 16.0f;
+                float dy = (cube.maxY - cube.minY) / 16.0f;
+                float dz = (cube.maxZ - cube.minZ) / 16.0f;
+                float diag = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+                if (diag > 1e-4f) {
+                    perCubeScale = 1.0f + (scale - 1.0f) * refDiag / diag;
+                }
+            }
             original.set(p.pose());
             // transform = T(c)·S·T(-c),复用同一对象(矩阵乘法是纯读源写目标)
             transform.identity()
                     .translate(cx, cy, cz)
-                    .scale(scale)
+                    .scale(perCubeScale)
                     .translate(-cx, -cy, -cz);
             p.pose().mul(transform);
             try {
@@ -1719,18 +2597,26 @@ public final class OutlineRenderer {
 
     /**
      * 鞘翅穿戴描边:逐翼片绕自身包围盒中心放大壳。
+     * <p>
+     * <b>与盔甲视觉一致(v0.1.7 修正)</b>:鞘翅复用盔甲的放大系数
+     * ({@link #ARMOR_INFLATE_PER_THICKNESS})与参考半对角线
+     * ({@link #ARMOR_REF_DIAG}),均匀外扩后两者外扩像素完全相同 —— 同一个
+     * armorThickness 配置统一控制盔甲与鞘翅的描边厚度(此前鞘翅独立系数导致
+     * 同一配置下鞘翅明显更宽)。
      *
      * @param pose      实体渲染 PoseStack(已含实体变换与姿态)
      * @param wings     左右翼片(已 setupAnim 的 ModelPart)
      * @param color     描边 ARGB
-     * @param thickness 描边厚度(像素语义)
+     * @param thickness 描边厚度(像素语义,来自 armorThickness 配置)
      */
     public void renderElytraOutline(PoseStack pose, ModelPart[] wings, int color, float thickness) {
-        renderEntityModelOutline(pose, wings, ELYTRA_TEXTURE, ELYTRA_INFLATE_PER_THICKNESS, color, thickness);
+        renderEntityModelOutline(pose, wings, ELYTRA_TEXTURE, ARMOR_INFLATE_PER_THICKNESS, color, thickness,
+                true, ARMOR_REF_DIAG);
     }
 
     /**
-     * 实体模型描边通用版:逐 cube 绕自身包围盒中心放大壳。
+     * 实体模型描边通用版:逐 cube 绕自身包围盒中心放大壳(鞘翅/投掷物/BEWLR 长枪共用)。
+     * 使用<b>固定放大壳</b>(不按 cube 自适应,向后兼容)。
      *
      * @param pose              实体渲染 PoseStack(已含实体变换与姿态)
      * @param models            实体模型部件(可多个,如鞘翅左右翼)
@@ -1741,6 +2627,25 @@ public final class OutlineRenderer {
      */
     public void renderEntityModelOutline(PoseStack pose, ModelPart[] models, ResourceLocation texture,
                                          float inflatePerThick, int color, float thickness) {
+        renderEntityModelOutline(pose, models, texture, inflatePerThick, color, thickness,
+                false, ARMOR_REF_DIAG);
+    }
+
+    /**
+     * 实体模型描边通用版(内部带均匀外扩开关)。
+     *
+     * @param pose              实体渲染 PoseStack(已含实体变换与姿态)
+     * @param models            实体模型部件(可多个,如鞘翅左右翼)
+     * @param texture           独立纹理(非 atlas),描边着色器采样其 alpha 遮罩
+     * @param inflatePerThick   每厚度放大增量
+     * @param color             描边 ARGB
+     * @param thickness         描边厚度(像素语义)
+     * @param uniform           true = 每 cube 等厚外扩(参考 refDiag);false = 固定放大壳
+     * @param refDiag           均匀外扩参考半对角线(模型单位,仅 uniform=true 用)
+     */
+    private void renderEntityModelOutline(PoseStack pose, ModelPart[] models, ResourceLocation texture,
+                                          float inflatePerThick, int color, float thickness,
+                                          boolean uniform, float refDiag) {
         if (thickness <= 0f || this.outlineShader == null || models == null || models.length == 0) {
             return;
         }
@@ -1751,7 +2656,7 @@ public final class OutlineRenderer {
         pose.pushPose();
         try {
             for (ModelPart part : models) {
-                renderPartInflated(pose, part, consumer, packedColor, scale);
+                renderPartInflated(pose, part, consumer, packedColor, scale, uniform, refDiag);
             }
         } finally {
             pose.popPose();

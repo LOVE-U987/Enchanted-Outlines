@@ -2,6 +2,189 @@
 
 ---
 
+## v0.1.7 (2026-08-09)
+
+### 修复: 鞘翅描边与盔甲视觉一致(同一配置统一控制)
+
+- 问题: 鞘翅描边此前用独立系数(0.09 + refDiag 0.701),同一 armorThickness
+  配置下外扩像素 ≈ thickness×0.504(8 → 约 4px),是盔甲(8 → 约 1.2px)的
+  <b>3 倍多</b>——玩家实测"盔甲要 8 才看得清,鞘翅用 8 却很宽"。
+- 修复: 鞘翅<b>直接复用盔甲</b>的放大系数 `ARMOR_INFLATE_PER_THICKNESS`(0.04)
+  与参考半对角线 `ARMOR_REF_DIAG`(0.468),均匀外扩后两者外扩像素完全一致
+  —— 同一个 armorThickness 统一控制盔甲与鞘翅的描边厚度。
+- 影响文件:
+  - `src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java`
+
+### 修复: 月弧长枪在背包/掉落物里轮廓错位(废弃 bewlr3dPrefer 配置)
+
+- 问题: 永恒星光月弧长枪附魔后,手持描边正常,但背包(GUI)/掉落物/展示框里轮廓错位。
+- 根因: 长枪在 GUI/GROUND/FIXED 下<b>本体是平面 inventory 模型</b>(永恒星光在
+  `ItemRenderer.render` 内替换为 `crescent_spear_inventory#standalone` 渲染);
+  但配置 `bewlr3dPrefer=true` 会让描边跳过平面、统一走 3D 放大壳
+  (`GuiGraphicsMixin`/`ItemRendererMixin` 里 `!preferBewlr3D()` 判断)→ 3D 放大壳
+  套在平面本体上,轮廓必然错位。手持本体是 3D 实体模型,3D 描边对得上 → 正常。
+  违反 AGENTS.md 铁律"本体怎么渲染,描边就怎么渲染"。
+- 修复:
+  - `GuiGraphicsMixin`/`ItemRendererMixin`:GUI/GROUND/FIXED 下<b>无条件优先平面
+    变体</b>(`inventoryModelFor`),不再被任何配置跳过;无平面变体(灾变武器,GUI
+    本体就是 BEWLR 3D)才走 3D 放大壳。
+  - <b>废弃并移除</b>配置 `bewlr3dPrefer`(注意(破坏性)):该配置语义是"GUI 也统一
+    3D",但对"有平面变体的物品"是设计错误——本体 GUI 是平面,3D 描边永远错位;
+    对无平面变体的灾变武器它又无意义(本来 GUI 就 3D)。移除 Config 定义、配置界面
+    行、语言键、`preferBewlr3D()` 方法;已有 TOML 里的旧键由 NeoForge 自动清理
+    (行为回到正确默认)。
+- 影响文件:
+  - `src/main/java/com/enchantedoutlines/mod/mixin/GuiGraphicsMixin.java`
+  - `src/main/java/com/enchantedoutlines/mod/mixin/ItemRendererMixin.java`
+  - `src/main/java/com/enchantedoutlines/mod/config/Config.java`
+  - `src/main/java/com/enchantedoutlines/mod/config/EnchantedConfigScreen.java`
+  - `src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java`
+  - `src/main/resources/assets/enchanted_outlines/lang/zh_cn.json`
+  - `src/main/resources/assets/enchanted_outlines/lang/en_us.json`
+
+### 重构: 灾变(LionfishAPI)武器 3D 描边改为逐 cube 顶点法线外扩
+
+- 问题: 灾变等 LionfishAPI 骨骼模型武器的 3D 描边此前用"整体包围盒放大壳"——
+  按整件武器 AABB 中心放大,外扩量 = (scale-1)×点到中心距离。细长武器(枪杆/刀身)
+  端部离中心远、外扩偏多 → 端部膨胀、各部件描边粗细不均。
+- 修复(新增默认算法):`OutlineRenderer.renderLionfishPerCube` 逐 cube 顶点法线外扩:
+  - 精确复刻本体 `BasicModelPart.render` 变换链(translate(rotationPoint/16) →
+    mulPose(rotationZYX) → scale(xScale,yScale,zScale)),在<b>每个部件局部坐标系</b>
+    内渲染描边,姿态(rotateAngle)帧内实时读取,动画部件同步;
+  - 反射读取 `ModelBox.quads`(TexturedQuad[]),每个顶点沿<b>聚合顶点法线</b>
+    (相邻面法线平均后归一化;cube 24 个 quad 顶点按位置聚合成 8 个角点,共享
+    顶点外扩方向一致 → 面间无裂缝)外扩<b>固定距离</b>
+    offset = thickness×THICKNESS_SCALE×bewlr3dScale —— 位移与距中心距离无关,
+    端部不再膨胀,描边等厚贴身;
+  - UV 直接复用 `PositionTextureVertex.textureU/V`(构造时按 textureOffset 算好的
+    归一化 UV,与本体完全一致,描边 alpha 遮罩形状重合);
+  - 静态几何(坐标/UV/法线)按 cube 用 WeakHashMap 缓存(`ExpandedLionfishCube`),
+    每帧只做矩阵变换与顶点写入,零反射(缓存只含与帧无关的输入,不违反性能纪律)。
+- 配置: 新增 `bewlr3dPerCube`(默认 true,键位于 `run/config/enchanted_outlines-common.toml`):
+  true = 逐 cube 顶点法线外扩(默认);false = 回退整体包围盒放大壳(旧算法,
+  `renderLionfishInflated` 保留用于对比/回退)。配置界面新增同名开关行。
+- 兼容性(向后): 逐 cube 外扩失败(其他 LionfishAPI 版本反射字段缺失 / 无 quads)
+  时<b>自动回退整体放大壳</b> —— `renderLionfishPart` 返回实际渲染 cube 数,
+  drawn=0 则 `renderBewlrEntityOutline` 改走 `renderLionfishInflated`,保证任何
+  LionfishAPI 版本都有描边,不静默无描边。
+- 影响文件:
+  - `src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java`
+  - `src/main/java/com/enchantedoutlines/mod/config/Config.java`
+  - `src/main/java/com/enchantedoutlines/mod/config/EnchantedConfigScreen.java`
+
+### 修复: 模组细分盔甲(热泉石套装)描边比普通盔甲薄很多
+
+- 问题: 永恒星光热泉石盔甲穿戴上描边明显比原版盔甲薄。
+- 根因: 盔甲描边是"逐 cube 绕自身包围盒中心放大壳",外扩量 = (scale-1)×cube
+  半对角线。原版盔甲 cube 大(如胸甲 8×12×4 像素,半对角线 ≈0.468 模型单位),
+  描边自然厚;热泉石盔甲是模组自定义细分模型,cube 小很多 → 外扩按比例缩水 →
+  描边明显变薄。与灾变武器整体壳"端部膨胀"同一类问题(外扩依赖几何尺寸)。
+- 修复: `renderPartInflated` 新增 uniform 模式(仅盔甲路径启用,鞘翅/投掷物/长枪
+  传 false 保持原视觉):每个 cube 的放大系数按自身尺寸自适应
+  perCubeScale = 1+(scale-1)×refDiag/自身半对角线(refDiag=0.468,原版胸甲
+  参考) → 所有部件表面外扩量一致:原版盔甲视觉完全不变,模组细分盔甲描边
+  补足到相同厚度。新增配置 `armorUniformExpand`(默认 true,false 回退旧固定
+  放大壳)。
+- 影响文件:
+  - `src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java`
+  - `src/main/java/com/enchantedoutlines/mod/config/Config.java`
+  - `src/main/java/com/enchantedoutlines/mod/config/EnchantedConfigScreen.java`
+
+### 修复: 配置界面语言键缺失(显示原始键名)
+
+- 问题: 配置界面通用分类新增的 `bewlr3dScale`/`bewlr3dPrefer`/`bewlr3dPerCube`
+  三行缺少语言翻译键 → 界面显示原始键名;本次新增的 `armorUniformExpand` 同样。
+- 修复: `zh_cn.json` / `en_us.json` 补齐配置项的名称与 tooltip 翻译。
+  (`bewlr3dPrefer` 键随后随该配置废弃一并移除,见上方条目。)
+- 影响文件:
+  - `src/main/resources/assets/enchanted_outlines/lang/zh_cn.json`
+  - `src/main/resources/assets/enchanted_outlines/lang/en_us.json`
+
+---
+
+## v0.1.6 (2026-08-09)
+
+### 修复: 永恒星光(Eternal Starlight)月弧长枪不描边、热泉石盔甲错误轮廓
+
+- 问题: 模组 eternalstarlight-0.8.1+1.21.1+neoforge 的月弧长枪(crescent_spear)
+  附魔后无描边;热泉石套装(thermal_springstone)盔甲描边轮廓与本体不符(缺角/实心)。
+- 根因:
+  - 长枪是 BEWLR 物品(crescent_spear.json parent = builtin/entity,占位模型无几何),
+    本体在 GUI/GROUND/FIXED 下由永恒星光的 `ItemRendererMixin` 在 render 方法体内
+    替换为 `crescent_spear_inventory#inventory` 平面模型渲染;描边此前对
+    `isCustomRenderer()` 一律跳过 → 无描边。
+  - 热泉石盔甲本体在 `HumanoidArmorLayer.renderArmorPiece` 方法体内(HEAD 之后)通过
+    NeoForge hook 替换模型与纹理:模型换为带角的 `ThermalSpringStoneArmorModel`
+    (`IClientItemExtensions.getHumanoidArmorModel`),纹理换为自定义路径
+    `textures/armor/thermal_springstone_layer_X.png`
+    (`Item.getArmorTexture`,不走标准 `textures/models/armor/`)。
+    描边在 HEAD 用的是未替换的原版模型 + `layer.texture()` 生成的不存在标准路径
+    → 缺角 + 形状纹理读取失败回退纯白矩形(实心)。
+- 修复:
+  - 盔甲:`HumanoidArmorLayerMixin` 改用 NeoForge 官方 hook 与本体同源——
+    `ClientHooks.getArmorModel`(模型)+ `ClientHooks.getArmorTexture`(纹理,inner =
+    slot==LEGS 与本体 usesInnerModel 一致)。hook 默认实现即原逻辑
+    (getHumanoidArmorModel 返回原模型、getArmorTexture 返回 null 回退标准路径),
+    原版/普通模组盔甲行为不变;实现了 NeoForge 扩展的模组盔甲自动与本体对齐。
+    hook 返回非 HumanoidModel 时回退原模型(降级不破坏)。
+  - BEWLR 物品:`OutlineRenderer.inventoryModelFor(ItemStack)` 通用解析——GUI/
+    GROUND/FIXED 下按实测 MRL 变体顺序探测平面模型(永恒星光 style
+    `<ns>:item/<id>_inventory#standalone` 优先,实测本体 GUI 实际渲染用的就是它;
+    依次回退 `<ns>:item/<id>_inventory#inventory`、`<ns>:<id>_inventory#standalone`、
+    `<ns>:<id>_inventory#inventory`、`<ns>:<id>#standalone`、`<ns>:<id>#inventory`),
+    过滤 missing 模型与 builtin/entity 占位,找到平面模型即描边(与本体 GUI 实际
+    渲染模型一致);找不到则照旧跳过。
+  - BEWLR 手持物品 3D 描边(新增):`OutlineRenderer.renderBewlrEntityOutline`
+    反射 BEWLR 持有模型做放大壳——标准 Mojang Model(root 是 ModelPart,如永恒星光
+    CrescentSpearModel)走逐 cube 放大壳;LionfishAPI 骨骼模型(AdvancedEntityModel
+    的 root 是 AdvancedModelBox,如灾变)走整体包围盒放大壳(T(c)·S·T(-c) +
+    root.render)。模型字段按物品 id 大写 + `_MODEL` 约定从适配类
+    (`ESItemStackRenderer`/`CMItemstackRenderer`)静态字段反射读取,缺失时触发一次
+    BEWLR 渲染初始化。手持 FIRST/THIRD 与无平面变体的 GROUND/FIXED 均生效。
+  - BEWLR 描边<b>错位/翻转修复</b>(同日第二轮):模组 BEWLR 渲染器在 display
+    transform 之后、renderToBuffer 之前会对模型套一层<b>内部预变换</b>——永恒星光
+    `scale(1,-1,-1)`,灾变 `translate(0.5,0.5,0.5)+scale(1,-1,-1)`。描边必须在同一
+    预变换之后做放大壳,否则与本体错位/镜像。按模组适配:`BewlrModel` 记录
+    preTransform(ES_FLIP/CM_CENTER_FLIP),`applyBewlrPreTransform` 复刻。
+  - BEWLR 描边<b>灾变整体壳中心修复</b>(同日第三轮):LionfishAPI 整体放大壳的
+    AABB 直接用 cube 的<b>像素坐标</b>算中心(差 16 倍)且未计各部件
+    `rotationPointX/Y/Z` 代码偏移 → 灾变描边壳偏出本体。修复:`lionfishBounds`
+    递归累加每级部件 rotationPoint 得全局像素 AABB,中心 ÷16 转模型单位。
+    永恒星光(标准 Mojang 逐 cube 路径)本就正确,不受影响。
+  - BEWLR 描边<b>颜色混合</b>(同日第四轮):BEWLR 3D 描边此前统一用纯白纹理
+    (纯描边色,无混合)。现在反射读取本体纹理(持有类 `<ID>_TEXTURE` 或模型类
+    `TEXTURE`,如灾变 CMItemstackRenderer.THE_IMMOLATOR_TEXTURE、永恒星光
+    CrescentSpearModel.TEXTURE),描边颜色 = 贴图像素色 × 描边色,与扁平/盔甲
+    混色开关一致;拿不到纹理时回退纯白。
+  - BEWLR 3D 描边<b>配置化</b>(同日第五轮):3D 描边是几何放大壳(外扩量 =
+    (scale-1)×点到中心距离),细长武器多数面离中心近 → 旧硬编码 0.12 太弱。
+    新增配置 `bewlr3dScale`(默认 0.3,0.05-1.0 可调)替代硬编码;曾新增
+    `bewlr3dPrefer`(<b>v0.1.7 已废弃移除</b>,见 v0.1.7 首条)。配置界面同步新增。
+- 影响文件:
+  - `src/main/java/com/enchantedoutlines/mod/mixin/HumanoidArmorLayerMixin.java`
+  - `src/main/java/com/enchantedoutlines/mod/mixin/ItemRendererMixin.java`
+  - `src/main/java/com/enchantedoutlines/mod/mixin/GuiGraphicsMixin.java`
+  - `src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java`
+
+---
+
+## v0.1.5 (2026-08-09)
+
+### 修复: 持有盾牌/三叉戟时与 FerriteCore 同装崩溃(不可变 Map)
+
+- 问题: 装备 FerriteCore 时,持有盾牌或三叉戟进入物品栏/手持渲染即崩溃,
+  `UnsupportedOperationException` 栈顶为
+  `ModelSidesImpl.minimizeCulled → ImmutableCollections$AbstractImmutableMap.put`。
+- 根因: `shieldModel()`/`tridentModel()` 用 `Map.of()` + `List.of()` 构造
+  `culledFaces` 传入 `SimpleBakedModel`。FerriteCore 的 mixin 在模型构造器开头
+  对传入的原始 Map 调用 `put()`(把空列表替换为紧凑共享实例),不可变 Map 直接抛异常。
+- 修复: 新增 `newEmptyCulledFaces()` 辅助方法,返回 6 方向全为可变 `ArrayList`
+  的可变 `HashMap`,两处模型构造统一改用;原"缺方向 get(dir) 返回 null →
+  collectQuads addAll(null) 崩溃"的语义保持不变。
+- 影响文件: `src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java`
+
+---
+
 ## v0.1.4 (2026-08-08)
 
 ### 修复: 与 FA+Player 等 EMF 资源包共用时鞘翅描边错位

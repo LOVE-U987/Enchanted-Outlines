@@ -27,6 +27,15 @@
   "enchanted_outlines.config.outlineExposureReduce": "纯色描边按物体颜色降曝光",
   "enchanted_outlines.config.outlineExposureReduce.tooltip": "仅当关闭“附魔光效混合物品颜色”时生效：纯色描边按物品贴图的平均亮度压暗（暗色物品的描边显著变暗、亮色物品基本不变），模拟“混合算法根据物体颜色降低曝光”的效果，色相不变。关闭则纯色描边保持原始亮度。",
 
+  "enchanted_outlines.config.bewlr3dScale": "BEWLR 3D 描边放大系数",
+  "enchanted_outlines.config.bewlr3dScale.tooltip": "模组自定义实体模型武器(BEWLR,如月弧长枪/灾变武器)3D 描边的放大系数。3D 描边外扩量 = 系数×厚度×点到中心距离(整体壳)或固定位移(逐 cube 外扩);细长武器需要更大的基础系数才明显。",
+
+  "enchanted_outlines.config.bewlr3dPerCube": "灾变武器逐 cube 顶点法线外扩",
+  "enchanted_outlines.config.bewlr3dPerCube.tooltip": "true = 逐 cube 顶点法线外扩(等厚贴身、细长武器端部不膨胀,推荐);false = 整体包围盒放大壳(旧算法,端部外扩偏多)。",
+
+  "enchanted_outlines.config.armorUniformExpand": "盔甲描边均匀外扩",
+  "enchanted_outlines.config.armorUniformExpand.tooltip": "true = 每个盔甲部件(cube)按固定厚度外扩,模组细分模型(如热泉石盔甲)描边与普通盔甲一样厚;false = 按部件尺寸比例放大(旧算法,小部件描边偏薄)。",
+
   "enchanted_outlines.config.mergeMode": "多附魔取色",
   "enchanted_outlines.config.mergeMode.tooltip": "当一件物品带有多个附魔时,以哪个附魔的颜色为准?",
   "enchanted_outlines.config.mergeMode.highest": "最高等级优先",

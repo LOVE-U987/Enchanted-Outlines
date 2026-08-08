@@ -1,11 +1,11 @@
 package com.enchantedoutlines.mod.mixin;
 
-import com.enchantedoutlines.mod.EnchantedOutlines;
 import com.enchantedoutlines.mod.config.Config;
 import com.enchantedoutlines.mod.outline.ColorResolver;
 import com.enchantedoutlines.mod.outline.OutlineRenderer;
 
 import net.minecraft.client.model.HumanoidModel;
+import net.minecraft.client.model.Model;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.entity.layers.HumanoidArmorLayer;
 import net.minecraft.resources.ResourceLocation;
@@ -14,6 +14,8 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.ArmorMaterial;
 import net.minecraft.world.item.ItemStack;
+
+import net.neoforged.neoforge.client.ClientHooks;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 
@@ -68,16 +70,31 @@ public abstract class HumanoidArmorLayerMixin {
         if (layers.isEmpty()) {
             return;
         }
-        // 基础材质即可(描边只取 alpha 遮罩;染色 layer 形状相同)
-        ResourceLocation texture = layers.get(0).texture(slot == EquipmentSlot.LEGS);
+        // ⚠️ 本体在 renderArmorPiece 方法体内(HEAD 之后)通过 NeoForge hook 替换模型与纹理,
+        // 必须调用同一 hook 才能与本体 100% 一致(见 AGENTS.md 统一轮廓语义):
+        //   - 模型:ClientHooks.getArmorModel → IClientItemExtensions.getGenericArmorModel
+        //     → getHumanoidArmorModel。永恒星光热泉石盔甲返回带角的 ThermalSpringStoneArmorModel,
+        //     直接用 HEAD 参数的原版 HumanoidArmorModel 描边会缺角/轮廓与本体不符;
+        //   - 纹理:ClientHooks.getArmorTexture → Item.getArmorTexture。热泉石盔甲自定义
+        //     纹理路径 textures/armor/...(非标准 textures/models/armor/),直接用
+        //     layer.texture(legs) 生成不存在的路径 → 形状纹理读取失败 → 描边变实心错误轮廓。
+        Model hookModel = ClientHooks.getArmorModel(entity, stack, slot, armorModel);
+        HumanoidModel<?> outlineModel = hookModel instanceof HumanoidModel<?> humanoid ? humanoid : armorModel;
+        // 内层 = 腿部槽(与本体 usesInnerModel 一致)
+        boolean inner = slot == EquipmentSlot.LEGS;
+        // 基础材质即可(描边只取 alpha 遮罩;染色 layer 形状相同);null 时回退标准路径
+        ResourceLocation texture = ClientHooks.getArmorTexture(entity, stack, layers.get(0), inner, slot);
+        if (texture == null) {
+            texture = layers.get(0).texture(inner);
+        }
 
         // HEAD 注入发生在方法体的 copyPropertiesTo(把父模型姿势复制到盔甲模型)之前,
         // 先手动复制姿势,否则描边壳会沿用默认姿势而与本体错位。
         // 泛型捕获问题用 raw 类型绕过(copyPropertiesTo 擦除后参数即 HumanoidModel)。
         @SuppressWarnings({"rawtypes", "unchecked"})
         HumanoidModel parent = (HumanoidModel) ((HumanoidArmorLayer<?, ?, ?>) (Object) this).getParentModel();
-        parent.copyPropertiesTo(armorModel);
+        parent.copyPropertiesTo(outlineModel);
 
-        OutlineRenderer.INSTANCE.renderArmorOutline(pose, armorModel, texture, color, thickness, slot);
+        OutlineRenderer.INSTANCE.renderArmorOutline(pose, outlineModel, texture, color, thickness, slot);
     }
 }

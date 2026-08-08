@@ -11,9 +11,12 @@ import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.client.resources.model.ModelResourceLocation;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
+
+import com.mojang.blaze3d.vertex.PoseStack;
 
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -52,6 +55,10 @@ public abstract class GuiGraphicsMixin {
         }
         ItemRenderer itemRenderer = Minecraft.getInstance().getItemRenderer();
         BakedModel model = itemRenderer.getModel(stack, level, entity, seed);
+        float thickness = ColorResolver.thickness(stack);
+        if (thickness <= 0f) {
+            return;
+        }
         // 三叉戟/望远镜在 GUI 下用完整模型渲染,复刻 ItemRenderer.render 的替换;
         // 盾牌是 BEWLR,用近似盒模型描边
         if (stack.is(Items.TRIDENT)) {
@@ -63,11 +70,32 @@ public abstract class GuiGraphicsMixin {
             model = OutlineRenderer.INSTANCE.shieldModel(model.getTransforms());
         }
         if (model.isCustomRenderer()) {
-            return;
-        }
-        float thickness = ColorResolver.thickness(stack);
-        if (thickness <= 0f) {
-            return;
+            // BEWLR 物品(GUI,如永恒星光月弧长枪):本体在 ItemRenderer.render 内被替换成
+            // 平面 inventory 模型渲染,描边用同一模型才能与物品图标本体对齐
+            // (见 OutlineRenderer.inventoryModelFor)。无平面变体(如灾变武器,本体 GUI
+            // 由 BEWLR 3D 渲染)→ 用 renderBewlrEntityOutline 反射模型做放大壳。
+            // ⚠️ 有平面变体时必须用平面描边(bewlr3dPrefer 已废弃):本体 GUI 是平面
+            // 模型,3D 放大壳套上去必然错位(2026-08-09 长枪背包错位根因)。
+            BakedModel inventoryModel = OutlineRenderer.INSTANCE.inventoryModelFor(stack);
+            if (inventoryModel == null) {
+                GuiGraphics self = (GuiGraphics) (Object) this;
+                PoseStack pose = self.pose();
+                pose.pushPose();
+                try {
+                    // 复刻 renderOutline 的 GUI 3D 变换链(x/y 格中心 + scale + GUI display)
+                    pose.translate(x + 8, y + 8, 150 + quadSize);
+                    pose.scale(16.0F, -16.0F, 16.0F);
+                    model.getTransforms().getTransform(ItemDisplayContext.GUI).apply(false, pose);
+                    pose.translate(-0.5F, -0.5F, -0.5F);
+                    if (!OutlineRenderer.INSTANCE.renderBewlrEntityOutline(stack, pose, color, thickness)) {
+                        return;
+                    }
+                } finally {
+                    pose.popPose();
+                }
+                return; // 已画完放大壳
+            }
+            model = inventoryModel;
         }
 
         GuiGraphics self = (GuiGraphics) (Object) this;

@@ -37,13 +37,13 @@ public final class Config {
             .comment("Outline thickness for items in pixels beyond the item sprite (0-8, decimal allowed).",
                     "物品(GUI/手持/投掷物)描边超出物品贴图的像素数,支持小数,0 关闭描边扩张。",
                     "实际偏移 = 值 × 0.5(贴图边缘渐变像素也会计入视觉宽度,1 即约半像素细线)。")
-            .defineInRange("thickness", 2.0, 0.0, 8.0);
+            .defineInRange("thickness", 1.0, 0.0, 8.0);
 
     /** 盔甲描边厚度(名义像素,支持小数;实际偏移 = 值 × 0.5)。 */
     public static final ModConfigSpec.DoubleValue ARMOR_THICKNESS = BUILDER
             .comment("Outline thickness for worn armor in pixels beyond the model (0-8, decimal allowed).",
                     "盔甲描边超出模型的像素数,支持小数,0 关闭盔甲描边扩张。")
-            .defineInRange("armorThickness", 4.0, 0.0, 8.0);
+            .defineInRange("armorThickness", 8.0, 0.0, 20.0);
 
     /** 多附魔取色模式 */
     public static final ModConfigSpec.ConfigValue<String> MERGE_MODE = BUILDER
@@ -95,6 +95,26 @@ public final class Config {
             .define("armorPixelColorGlint", true);
 
     /**
+     * 盔甲描边是否按<b>固定厚度</b>均匀外扩(默认 true)。
+     * <p>
+     * 盔甲描边是"逐 cube 绕自身包围盒中心放大壳",外扩量 = (scale-1)×cube 半尺寸。
+     * 原版盔甲 cube 大(如胸甲 8×12×4 像素)描边自然厚;模组自定义盔甲(如永恒星光
+     * 热泉石套装)模型更细分、cube 小 → 外扩按比例缩水 → 描边明显偏薄。
+     * <ul>
+     *   <li>true(默认):每个 cube 按自身尺寸<b>自适应放大系数</b>,使所有部件的
+     *       表面外扩量一致(以原版胸甲尺寸为参考 → 原版盔甲视觉完全不变),模组
+     *       细分盔甲描边与普通盔甲一样厚;</li>
+     *   <li>false:固定放大系数(旧算法),小 cube 描边偏薄。</li>
+     * </ul>
+     */
+    public static final ModConfigSpec.BooleanValue ARMOR_UNIFORM_EXPAND = BUILDER
+            .comment("Uniform armor outline thickness (per-cube self-adaptive scale).",
+                    "盔甲描边是否按固定厚度均匀外扩:",
+                    "true = 每个盔甲部件按自身尺寸自适应放大,模组细分模型(如热泉石盔甲)描边与普通盔甲一样厚(默认);",
+                    "false = 固定放大系数(旧算法,小部件描边偏薄)。")
+            .define("armorUniformExpand", true);
+
+    /**
      * 关闭混色(纯色描边)时是否按物体颜色降低曝光亮度(仅光影兼容模式下生效)。
      * <p>
      * 混色开启时描边 = 描边色 × 物品贴图像素色,物品贴图多为暗/中性色 → 描边被
@@ -110,6 +130,42 @@ public final class Config {
                     "true = 纯色描边按物品贴图平均亮度压暗(暗色物品的描边显著变暗,亮色物品基本不变),色相不变;",
                     "false = 纯色描边保持原始亮度。")
             .define("outlineExposureReduce", true);
+
+    // ==================== BEWLR 3D 物品描边 ====================
+
+    /**
+     * BEWLR 3D 物品(模组自定义实体模型,如永恒星光长枪/灾变武器)的描边放大系数。
+     * <p>
+     * 3D 描边是<b>几何放大壳</b>:scale = 1 + thickness×0.5×本系数,外扩量 =
+     * (scale-1)×点到中心距离。细长武器(刀身/枪杆)多数面离中心近,外扩量小 →
+     * 需要比扁平物品(像素偏移)更大的基础系数才明显。默认 0.3(旧硬编码 0.12 的
+     * 2.5 倍);仍觉得细可调大,0.5+ 会较粗。
+     */
+    public static final ModConfigSpec.DoubleValue BEWLR_3D_SCALE = BUILDER
+            .comment("Outline inflate scale for BEWLR 3D items (enchanted custom-model weapons).",
+                    "BEWLR 3D 物品(模组自定义模型武器,如月弧长枪/灾变武器)的描边放大系数。",
+                    "3D 描边是几何放大壳,外扩量 = 系数×厚度×点到中心距离;细长武器需要更大的基础系数才明显。",
+                    "0.1-1.0 之间调节,越大描边越粗。")
+            .defineInRange("bewlr3dScale", 0.1, 0.05, 1.0);
+
+    /**
+     * BEWLR 3D 描边是否用<b>逐 cube 顶点法线外扩</b>(默认)。
+     * <p>
+     * 灾变等 LionfishAPI 骨骼模型武器的 3D 描边有两种算法:
+     * <ul>
+     *   <li>true(默认):<b>逐 cube 顶点法线外扩</b> —— 每个 cube 的顶点沿相邻面
+     *       法线平均方向外扩固定距离,描边"等厚贴身";细长武器(枪杆/刀身)端部
+     *       不再随整体长度膨胀,各部件描边粗细均匀;</li>
+     *   <li>false:<b>整体包围盒放大壳</b>(旧算法)—— 按整件武器 AABB 中心放大,
+     *       外扩量 = (scale-1)×到中心距离,端部(距中心远的部件)外扩偏多,
+     *       细长武器会有"端部膨胀"。</li>
+     * </ul>
+     */
+    public static final ModConfigSpec.BooleanValue BEWLR_3D_PER_CUBE = BUILDER
+            .comment("Use per-cube vertex-normal expansion for BEWLR 3D outlines (default true).",
+                    "BEWLR 3D 描边算法:true = 逐 cube 顶点法线外扩(等厚贴身,端部不膨胀,默认);",
+                    "false = 整体包围盒放大壳(旧算法,细长武器端部外扩偏多)。")
+            .define("bewlr3dPerCube", true);
 
     // ==================== 颜色 ====================
 

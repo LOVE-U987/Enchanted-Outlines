@@ -102,7 +102,10 @@ public class EnchantedConfigScreen extends Screen {
             y = addDoubleRow(y, "armorThickness", Config.ARMOR_THICKNESS, 0.0, 8.0, widgetX);
             y = addBooleanRow(y, "itemPixelColorGlint", Config.ITEM_PIXEL_COLOR_GLINT, widgetX);
             y = addBooleanRow(y, "armorPixelColorGlint", Config.ARMOR_PIXEL_COLOR_GLINT, widgetX);
+            y = addBooleanRow(y, "armorUniformExpand", Config.ARMOR_UNIFORM_EXPAND, widgetX);
             y = addBooleanRow(y, "outlineExposureReduce", Config.OUTLINE_EXPOSURE_REDUCE, widgetX);
+            y = addDoubleRow(y, "bewlr3dScale", Config.BEWLR_3D_SCALE, 0.05, 1.0, widgetX);
+            y = addBooleanRow(y, "bewlr3dPerCube", Config.BEWLR_3D_PER_CUBE, widgetX);
             y = addMergeModeRow(y, widgetX);
         } else {
             y = addColorRow(y, "defaultColor", Config.DEFAULT_COLOR, widgetX);

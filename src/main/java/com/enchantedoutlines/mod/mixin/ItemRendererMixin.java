@@ -70,6 +70,7 @@ public abstract class ItemRendererMixin {
         boolean guiLike = context == ItemDisplayContext.GUI
                 || context == ItemDisplayContext.GROUND
                 || context == ItemDisplayContext.FIXED;
+        boolean bewlrHandheld = false; // 手持 BEWLR 物品:本体 = BEWLR 自定义实体模型
 
         // 盾牌/三叉戟是 BEWLR(占位模型无形状),用近似盒模型描边;其余 BEWLR 物品跳过。
         // 三叉戟:
@@ -88,7 +89,26 @@ public abstract class ItemRendererMixin {
             // 掉落物/展示框望远镜:本体同样被 ItemRenderer.render 替换为 SPYGLASS_MODEL(平面)
             model = getModel(SPYGLASS_MODEL);
         } else if (model.isCustomRenderer()) {
-            return;
+            // BEWLR 物品(如永恒星光月弧长枪 crescent_spear、灾变武器,builtin/entity 占位无几何):
+            //   GUI/GROUND/FIXED:本体被替换成平面 inventory 模型(永恒星光通过 ItemRendererMixin
+            //     在 render 内替换为 item/crescent_spear_inventory#standalone),描边用同一模型;
+            //   手持(FIRST/THIRD):本体由 BEWLR 渲染自定义实体模型(CrescentSpearModel 等),
+            //     描边用 renderBewlrEntityOutline 反射其模型做放大壳。
+            if (guiLike) {
+                // GUI/GROUND/FIXED:有平面模型变体的用平面描边(背包/掉落物图标清晰,
+                // 与本体一致);⚠️ 无平面变体(bewlr3dPrefer 已废弃)才用 3D 放大壳
+                // (灾变武器 GUI 本体就是 BEWLR 3D,3D 描边才对齐)。
+                BakedModel inventoryModel = OutlineRenderer.INSTANCE.inventoryModelFor(stack);
+                if (inventoryModel != null) {
+                    model = inventoryModel;
+                } else {
+                    // 无平面变体(GROUND/FIXED 下本体仍是 BEWLR 3D,如灾变武器)→ 放大壳
+                    bewlrHandheld = true;
+                }
+            } else {
+                // 手持:本体 = BEWLR 3D 实体模型 → 3D 放大壳描边
+                bewlrHandheld = true;
+            }
         }
         float thickness = ColorResolver.thickness(stack);
         if (thickness <= 0f) {
@@ -100,7 +120,13 @@ public abstract class ItemRendererMixin {
         try {
             model.getTransforms().getTransform(context).apply(leftHand, pose);
             pose.translate(-0.5F, -0.5F, -0.5F);
-            if (context == ItemDisplayContext.FIXED) {
+            if (bewlrHandheld) {
+                // 本体手持 = BEWLR 自定义实体模型(模组渲染器内部无额外姿态变换,直接
+                // renderToBuffer)→ 反射模型做逐 cube/整体放大壳,与本体同变换对齐。
+                if (!OutlineRenderer.INSTANCE.renderBewlrEntityOutline(stack, pose, color, thickness)) {
+                    return; // 拿不到模型:跳过(与修复前一致)
+                }
+            } else if (context == ItemDisplayContext.FIXED) {
                 // 物品展示框:物品是背景物体(贴墙/距玩家远),半透明描边(即使 boost 抬升)
                 // 在明亮场景中仍透出背景几乎不可见 → 硬切不透明:非透明像素一律
                 // alpha=1.0 纯色,轮廓完全不透明。偏移不变。
