@@ -2,6 +2,31 @@
 
 ---
 
+## v0.1.4 (2026-08-08)
+
+### 修复: 与 FA+Player 等 EMF 资源包共用时鞘翅描边错位
+
+- 问题: 启用 FA+Player-v1.1 资源包(含 `emf/cem/elytra.jem`)时,鞘翅描边与本体错位。
+- 根因: 1.21.1 的 `ElytraLayer` 通过 `EntityModelSet.bakeLayer(ModelLayers.ELYTRA)` 获取
+  `ElytraModel`,EMF(Entity Model Features)会拦截 `bakeLayer` 并用 jem 替换模型树
+  (翼片几何移到 EMF 自定义子部件,并附带自定义翅膀动画)。描边若在
+  `ElytraLayer#render` 的 HEAD 复刻 `copyPropertiesTo + setupAnim` 并手动触发 EMF 动画,
+  任何一步与本体渲染路径的细微差异都会导致描边与本体姿态不一致(轮廓错位)。
+- 修复: 描边注入点改为 `ElytraLayer#render` 的 **TAIL**。本体渲染流程是
+  `translate(0,0,0.125) → copyPropertiesTo → setupAnim → renderToBuffer`,
+  其中 EMF 自定义动画在 `renderToBuffer → EMFModelPartWithState.render → root.animate()`
+  内部应用;TAIL 时本体已渲染完毕,`elytraModel` 的姿态就是本体实际渲染用的
+  <b>最终姿态</b>,直接复用渲染描边即可,无需复刻任何逻辑 —— 与本体 100% 同步。
+  深度测试保证:本体(cutout,先画,写深度)遮挡描边放大壳的内侧表面,描边(translucent,
+  后画)只显示外扩边缘,不污染本体表面。
+- 移除: 原 HEAD 方案的 `setupAnim` 复刻与 EMF `getRoot()/animate()` 反射调用(不再需要)。
+- 依赖说明: 本功能<b>不依赖 EMF 及任何前置</b>(如 ETF),不引用其任何类,无编译期/
+  运行期硬依赖(`neoforge.mods.toml` 仅有 neoforge/minecraft 必需依赖)。有 EMF 时
+  描边自动同步其自定义动画;无 EMF 时即原版姿态,同一套代码两种场景通用。
+- 影响文件: `src/main/java/com/enchantedoutlines/mod/mixin/ElytraLayerMixin.java`
+
+---
+
 ## v0.1.3 (2026-08-08)
 
 ### 文档: 关键代码区域写入防呆注释(AGENTS.md 铁律内联)
