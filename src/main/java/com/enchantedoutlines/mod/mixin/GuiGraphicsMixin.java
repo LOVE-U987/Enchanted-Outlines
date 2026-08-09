@@ -69,6 +69,18 @@ public abstract class GuiGraphicsMixin {
             // 传当前解析出的模型 transforms(GUI 下 blocking/non-blocking 同用 gui display,无差异)
             model = OutlineRenderer.INSTANCE.shieldModel(model.getTransforms());
         }
+        // ⚠️ 先取 GUI 视角子模型(2026-08-09 XIM 资源包兼容):资源包可用
+        // neoforge:separate_transforms loader 把物品拆成多视角子模型(灾变武器 GUI = 2D
+        // 平面 item/generated,手持 = 3D builtin/entity base)。本体 GuiGraphics.renderItem
+        // → ItemRenderer.render 渲染前就是 model.applyTransform(GUI) 按视角选子模型,描边
+        // 必须拿同一子模型:否则 getQuads() 取到 base(空几何)无描边、isCustomRenderer()
+        // 恒 false 不走 BEWLR 分支。用临时 PoseStack 只取子模型(display 变换由
+        // renderOutline 内部基于子模型 getTransforms() 应用,与本体 applyTransform 一致);
+        // 对普通 BakedModel applyTransform 默认返回 this,行为不变。
+        {
+            BakedModel guiSub = model.applyTransform(ItemDisplayContext.GUI, new PoseStack(), false);
+            model = guiSub;
+        }
         if (model.isCustomRenderer()) {
             // BEWLR 物品(GUI,如永恒星光月弧长枪):本体在 ItemRenderer.render 内被替换成
             // 平面 inventory 模型渲染,描边用同一模型才能与物品图标本体对齐

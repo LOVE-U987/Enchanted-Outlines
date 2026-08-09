@@ -88,38 +88,46 @@ public abstract class ItemRendererMixin {
         } else if (stack.is(Items.SPYGLASS) && guiLike) {
             // 掉落物/展示框望远镜:本体同样被 ItemRenderer.render 替换为 SPYGLASS_MODEL(平面)
             model = getModel(SPYGLASS_MODEL);
-        } else if (model.isCustomRenderer()) {
-            // BEWLR 物品(如永恒星光月弧长枪 crescent_spear、灾变武器,builtin/entity 占位无几何):
-            //   GUI/GROUND/FIXED:本体被替换成平面 inventory 模型(永恒星光通过 ItemRendererMixin
-            //     在 render 内替换为 item/crescent_spear_inventory#standalone),描边用同一模型;
-            //   手持(FIRST/THIRD):本体由 BEWLR 渲染自定义实体模型(CrescentSpearModel 等),
-            //     描边用 renderBewlrEntityOutline 反射其模型做放大壳。
-            if (guiLike) {
-                // GUI/GROUND/FIXED:有平面模型变体的用平面描边(背包/掉落物图标清晰,
-                // 与本体一致);⚠️ 无平面变体(bewlr3dPrefer 已废弃)才用 3D 放大壳
-                // (灾变武器 GUI 本体就是 BEWLR 3D,3D 描边才对齐)。
-                BakedModel inventoryModel = OutlineRenderer.INSTANCE.inventoryModelFor(stack);
-                if (inventoryModel != null) {
-                    model = inventoryModel;
-                } else {
-                    // 无平面变体(GROUND/FIXED 下本体仍是 BEWLR 3D,如灾变武器)→ 放大壳
-                    bewlrHandheld = true;
-                }
-            } else {
-                // 手持:本体 = BEWLR 3D 实体模型 → 3D 放大壳描边
-                bewlrHandheld = true;
-            }
         }
         float thickness = ColorResolver.thickness(stack);
         if (thickness <= 0f) {
             return;
         }
 
-        // 复刻 render 方法体的 display 变换(HEAD 注入时尚未应用)
+        // 复刻 render 方法体的 display 变换(HEAD 注入时尚未应用)。
+        // ⚠️ 必须用 applyTransform 而非手动 getTransforms().apply:资源包可用
+        // neoforge:separate_transforms loader 把物品拆成多视角子模型(如 XIM 资源包把
+        // 灾变武器 GUI/FIXED 换成 2D 平面、手持保留 3D builtin/entity base)。
+        // 本体 ItemRenderer.render 渲染前就是 model.applyTransform(context) 按视角选子模型;
+        // 描边必须拿同一子模型,否则 getQuads() 取到 base(空几何)无描边、isCustomRenderer()
+        // 恒 false 不进 BEWLR 分支(2026-08-09 XIM 资源包不兼容根因)。
+        // 先 pushPose 再应用变换:描边后 popPose 恢复,本体随后自行应用同一变换,不重复。
         pose.pushPose();
         try {
-            model.getTransforms().getTransform(context).apply(leftHand, pose);
+            model = model.applyTransform(context, pose, leftHand);
             pose.translate(-0.5F, -0.5F, -0.5F);
+            if (model.isCustomRenderer()) {
+                // 子模型是 builtin/entity(手持 base 或 GUI 无平面变体):本体由 BEWLR 渲染
+                // 自定义实体模型 → 3D 放大壳描边。
+                //   GUI/GROUND/FIXED:有平面模型变体的用平面描边(背包/掉落物图标清晰,
+                //   与本体一致);⚠️ 无平面变体(bewlr3dPrefer 已废弃)才用 3D 放大壳
+                //   (灾变武器 GUI 本体就是 BEWLR 3D,3D 描边才对齐)。
+                if (guiLike) {
+                    BakedModel inventoryModel = OutlineRenderer.INSTANCE.inventoryModelFor(stack);
+                    if (inventoryModel != null) {
+                        model = inventoryModel;
+                    } else {
+                        // 无平面变体(GROUND/FIXED 下本体仍是 BEWLR 3D,如灾变武器)→ 放大壳
+                        bewlrHandheld = true;
+                    }
+                } else {
+                    // 手持:本体 = BEWLR 3D 实体模型 → 3D 放大壳描边
+                    bewlrHandheld = true;
+                }
+            }
+            // 子模型不是 custom renderer(如 separate_transforms 的 2D 平面 GUI 子模型,
+            // 本体就是普通平面渲染)→ 保持 model,下方走 renderHandOutline 平面描边,与本体一致。
+
             if (bewlrHandheld) {
                 // 本体手持 = BEWLR 自定义实体模型(模组渲染器内部无额外姿态变换,直接
                 // renderToBuffer)→ 反射模型做逐 cube/整体放大壳,与本体同变换对齐。
