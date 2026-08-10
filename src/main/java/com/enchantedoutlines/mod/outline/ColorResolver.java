@@ -4,12 +4,11 @@ import java.util.Map;
 
 import com.enchantedoutlines.mod.config.Config;
 
-import net.minecraft.core.Holder;
-import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.enchantment.Enchantment;
-import net.minecraft.world.item.enchantment.ItemEnchantments;
+import net.minecraft.world.item.enchantment.EnchantmentHelper;
 
 /**
  * 附魔物品 → 描边颜色与厚度。
@@ -23,8 +22,9 @@ import net.minecraft.world.item.enchantment.ItemEnchantments;
  * </ol>
  * 厚度:程序化逐物品厚度 &gt; 全局配置 thickness。
  * <p>
- * 1.21.1 附魔读取走 {@code DataComponents.ENCHANTMENTS}(keySet 为
- * {@code Holder<Enchantment>}),颜色按附魔的 ResourceLocation 匹配 → 模组附魔天然可用。
+ * 1.20.1 附魔读取走 {@code EnchantmentHelper.getEnchantments(ItemStack)}
+ * (返回 {@code Map<Enchantment, Integer>}),颜色按附魔的 ResourceLocation
+ * ({@code BuiltInRegistries.ENCHANTMENT.getKey})匹配 → 模组附魔天然可用。
  */
 public final class ColorResolver {
 
@@ -35,7 +35,7 @@ public final class ColorResolver {
      * @return 描边 ARGB 颜色;无附魔或物品被禁用时返回 -1(不描边)
      */
     public static int resolve(ItemStack stack) {
-        ItemEnchantments enchantments = stack.getOrDefault(DataComponents.ENCHANTMENTS, ItemEnchantments.EMPTY);
+        Map<Enchantment, Integer> enchantments = EnchantmentHelper.getEnchantments(stack);
         if (enchantments.isEmpty()) {
             return -1;
         }
@@ -59,19 +59,19 @@ public final class ColorResolver {
         if (Config.isHighestMerge()) {
             int bestLevel = -1;
             int bestColor = fallback;
-            for (Holder<Enchantment> holder : enchantments.keySet()) {
-                int level = enchantments.getLevel(holder);
+            for (Map.Entry<Enchantment, Integer> entry : enchantments.entrySet()) {
+                int level = entry.getValue();
                 if (level > bestLevel) {
                     bestLevel = level;
-                    bestColor = colorFor(holder, fallback);
+                    bestColor = colorFor(entry.getKey(), fallback);
                 }
             }
             return bestColor;
         }
 
         // first 模式:取列表首个附魔的颜色
-        for (Holder<Enchantment> holder : enchantments.keySet()) {
-            return colorFor(holder, fallback);
+        for (Map.Entry<Enchantment, Integer> entry : enchantments.entrySet()) {
+            return colorFor(entry.getKey(), fallback);
         }
         return fallback;
     }
@@ -131,12 +131,17 @@ public final class ColorResolver {
         return Config.ARMOR_THICKNESS.get().floatValue();
     }
 
-    private static int colorFor(Holder<Enchantment> holder, int fallback) {
-        var key = holder.unwrapKey();
-        if (key.isEmpty()) {
+    /**
+     * 取附魔的颜色(程序化注册优先于配置;未配置回退默认色)。
+     *
+     * @param enchantment 附魔对象(1.20.1 直接是 Enchantment,无 Holder)
+     * @param fallback    默认描边色
+     */
+    private static int colorFor(Enchantment enchantment, int fallback) {
+        ResourceLocation id = BuiltInRegistries.ENCHANTMENT.getKey(enchantment);
+        if (id == null) {
             return fallback;
         }
-        ResourceLocation id = key.get().location();
         Integer color = OutlineColorRegistry.enchantmentColor(id);
         if (color != null) {
             return color;
@@ -146,7 +151,8 @@ public final class ColorResolver {
         return c != null ? c : fallback;
     }
 
+    /** 物品注册 ID(1.20.1 经 {@link BuiltInRegistries#ITEM},无 Holder);无注册项返回 null。 */
     private static ResourceLocation itemId(ItemStack stack) {
-        return stack.getItemHolder().unwrapKey().map(key -> key.location()).orElse(null);
+        return BuiltInRegistries.ITEM.getKey(stack.getItem());
     }
 }

@@ -41,11 +41,11 @@ public abstract class ItemRendererMixin {
 
     /** 复刻 ItemRenderer.render 在 GUI/GROUND/FIXED 下对特殊物品的模型替换(与 ItemRenderer 同源)。 */
     private static final ModelResourceLocation TRIDENT_MODEL =
-            ModelResourceLocation.inventory(ResourceLocation.withDefaultNamespace("trident"));
+            new ModelResourceLocation(ResourceLocation.withDefaultNamespace("trident"), "inventory");
     private static final ModelResourceLocation SPYGLASS_MODEL =
-            ModelResourceLocation.inventory(ResourceLocation.withDefaultNamespace("spyglass"));
+            new ModelResourceLocation(ResourceLocation.withDefaultNamespace("spyglass"), "inventory");
 
-    @SuppressWarnings("deprecation") // getTransforms 在 1.21.1 已过时但 vanilla ItemRenderer 同款使用,无更优替代
+    @SuppressWarnings("deprecation") // getTransforms 在 1.20.1 仍使用,无更优替代
     @Inject(method = "render(Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/item/ItemDisplayContext;ZLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;IILnet/minecraft/client/resources/model/BakedModel;)V",
             at = @At("HEAD"))
     private void enchantedoutlines$renderHandOutline(ItemStack stack, ItemDisplayContext context, boolean leftHand,
@@ -95,19 +95,20 @@ public abstract class ItemRendererMixin {
         }
 
         // 复刻 render 方法体的 display 变换(HEAD 注入时尚未应用)。
-        // ⚠️ 必须用 applyTransform 而非手动 getTransforms().apply:资源包可用
-        // neoforge:separate_transforms loader 把物品拆成多视角子模型(如 XIM 资源包把
-        // 灾变武器 GUI/FIXED 换成 2D 平面、手持保留 3D builtin/entity base)。
-        // 本体 ItemRenderer.render 渲染前就是 model.applyTransform(context) 按视角选子模型;
-        // 描边必须拿同一子模型,否则 getQuads() 取到 base(空几何)无描边、isCustomRenderer()
-        // 恒 false 不进 BEWLR 分支(2026-08-09 XIM 资源包不兼容根因)。
+        // ⚠️ 1.20.1 的 BakedModel 接口<b>没有</b> applyTransform(那是 1.21.1 NeoForge 加的),
+        // 直接复刻本体 ItemRenderer.render 的变换链:getTransforms().getTransform(context).apply
+        // → translate(-0.5)(与本体逐行一致,见 1.20.1 ItemRenderer.render 源码)。
+        // 资源包的 forge:separate_transforms loader 在 1.20.1 的 Baked 模型
+        // (SeparateTransformsModel$Baked)行为与 1.21.1 NeoForge 不同:getQuads 直接委托
+        // base(几何非空)、isCustomRenderer 委托 base —— 本体渲染时 ItemRenderer 同样
+        // 不切换子模型,描边直接取同一 model 的几何即与本体一致,无需子模型切换。
         // 先 pushPose 再应用变换:描边后 popPose 恢复,本体随后自行应用同一变换,不重复。
         pose.pushPose();
         try {
-            model = model.applyTransform(context, pose, leftHand);
+            model.getTransforms().getTransform(context).apply(leftHand, pose);
             pose.translate(-0.5F, -0.5F, -0.5F);
             if (model.isCustomRenderer()) {
-                // 子模型是 builtin/entity(手持 base 或 GUI 无平面变体):本体由 BEWLR 渲染
+                // 模型是 builtin/entity(手持 base 或 GUI 无平面变体):本体由 BEWLR 渲染
                 // 自定义实体模型 → 3D 放大壳描边。
                 //   GUI/GROUND/FIXED:有平面模型变体的用平面描边(背包/掉落物图标清晰,
                 //   与本体一致);⚠️ 无平面变体(bewlr3dPrefer 已废弃)才用 3D 放大壳
@@ -125,8 +126,8 @@ public abstract class ItemRendererMixin {
                     bewlrHandheld = true;
                 }
             }
-            // 子模型不是 custom renderer(如 separate_transforms 的 2D 平面 GUI 子模型,
-            // 本体就是普通平面渲染)→ 保持 model,下方走 renderHandOutline 平面描边,与本体一致。
+            // 模型不是 custom renderer(普通平面模型)→ 保持 model,下方走 renderHandOutline
+            // 平面描边,与本体一致。
 
             if (bewlrHandheld) {
                 // 本体手持 = BEWLR 自定义实体模型(模组渲染器内部无额外姿态变换,直接

@@ -10,8 +10,8 @@ import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
 
 import net.minecraft.resources.ResourceLocation;
-import net.neoforged.fml.config.ModConfig;
-import net.neoforged.neoforge.common.ModConfigSpec;
+import net.minecraftforge.fml.config.ModConfig;
+import net.minecraftforge.common.ForgeConfigSpec;
 
 /**
  * Enchanted Outlines 配置定义(COMMON 类型)。
@@ -22,31 +22,31 @@ import net.neoforged.neoforge.common.ModConfigSpec;
  */
 public final class Config {
 
-    private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
+    private static final ForgeConfigSpec.Builder BUILDER = new ForgeConfigSpec.Builder();
 
     // ==================== 通用 ====================
 
     /** 总开关 */
-    public static final ModConfigSpec.BooleanValue ENABLE = BUILDER
+    public static final ForgeConfigSpec.BooleanValue ENABLE = BUILDER
             .comment("Master switch for outline rendering.",
                     "关闭后任何界面都不再渲染描边。")
             .define("enable", true);
 
     /** 物品描边厚度(名义像素,支持小数;实际偏移 = 值 × 0.5,因贴图边缘渐变像素也会计入视觉宽度)。GUI / 手持 / 投掷物通用。 */
-    public static final ModConfigSpec.DoubleValue THICKNESS = BUILDER
+    public static final ForgeConfigSpec.DoubleValue THICKNESS = BUILDER
             .comment("Outline thickness for items in pixels beyond the item sprite (0-8, decimal allowed).",
                     "物品(GUI/手持/投掷物)描边超出物品贴图的像素数,支持小数,0 关闭描边扩张。",
                     "实际偏移 = 值 × 0.5(贴图边缘渐变像素也会计入视觉宽度,1 即约半像素细线)。")
             .defineInRange("thickness", 1.0, 0.0, 8.0);
 
     /** 盔甲描边厚度(名义像素,支持小数;实际偏移 = 值 × 0.5)。 */
-    public static final ModConfigSpec.DoubleValue ARMOR_THICKNESS = BUILDER
+    public static final ForgeConfigSpec.DoubleValue ARMOR_THICKNESS = BUILDER
             .comment("Outline thickness for worn armor in pixels beyond the model (0-8, decimal allowed).",
                     "盔甲描边超出模型的像素数,支持小数,0 关闭盔甲描边扩张。")
             .defineInRange("armorThickness", 8.0, 0.0, 20.0);
 
     /** 多附魔取色模式 */
-    public static final ModConfigSpec.ConfigValue<String> MERGE_MODE = BUILDER
+    public static final ForgeConfigSpec.ConfigValue<String> MERGE_MODE = BUILDER
             .comment("Color selection when an item has multiple enchantments: highest | first",
                     "多附魔时以哪个附魔颜色为准:highest(最高等级)或 first(列表首个)。")
             .define("mergeMode", "highest");
@@ -68,7 +68,7 @@ public final class Config {
      * 误判为方块材质而反射)。无光影 / 已开启 Iris 的 allowUnknownShaders 时,
      * 自定义 shader 可分离形状与颜色,描边始终为纯色,本配置不影响。
      */
-    public static final ModConfigSpec.BooleanValue ITEM_PIXEL_COLOR_GLINT = BUILDER
+    public static final ForgeConfigSpec.BooleanValue ITEM_PIXEL_COLOR_GLINT = BUILDER
             .comment("Mix outline color with each item pixel color (shader-compat mode only).",
                     "附魔光效是否根据物品每个像素的颜色确定(仅光影兼容模式下生效):",
                     "true = 描边色与物品贴图像素颜色混合(扁平物品与 3D 物品均生效,保留物品形状,颜色混合后独特有趣);",
@@ -87,7 +87,7 @@ public final class Config {
      *   <li>false:描边为纯描边色(形状由模型几何决定,不再贴合纹理镂空)。</li>
      * </ul>
      */
-    public static final ModConfigSpec.BooleanValue ARMOR_PIXEL_COLOR_GLINT = BUILDER
+    public static final ForgeConfigSpec.BooleanValue ARMOR_PIXEL_COLOR_GLINT = BUILDER
             .comment("Mix armor outline color with the armor texture (shader-compat mode only).",
                     "盔甲/鞘翅/投掷物描边是否与纹理颜色混合(仅光影兼容模式下生效):",
                     "true = 采样原纹理 alpha 遮罩(贴合单层纹理轮廓,颜色与纹理混合);",
@@ -107,7 +107,7 @@ public final class Config {
      *   <li>false:固定放大系数(旧算法),小 cube 描边偏薄。</li>
      * </ul>
      */
-    public static final ModConfigSpec.BooleanValue ARMOR_UNIFORM_EXPAND = BUILDER
+    public static final ForgeConfigSpec.BooleanValue ARMOR_UNIFORM_EXPAND = BUILDER
             .comment("Uniform armor outline thickness (per-cube self-adaptive scale).",
                     "盔甲描边是否按固定厚度均匀外扩:",
                     "true = 每个盔甲部件按自身尺寸自适应放大,模组细分模型(如热泉石盔甲)描边与普通盔甲一样厚(默认);",
@@ -124,7 +124,7 @@ public final class Config {
      * 暗色物品(铁剑等)描边显著变暗,亮色物品(金苹果等)基本不变;
      * 关闭本项:纯色描边保持原始亮度(可能出现曝光)。
      */
-    public static final ModConfigSpec.BooleanValue OUTLINE_EXPOSURE_REDUCE = BUILDER
+    public static final ForgeConfigSpec.BooleanValue OUTLINE_EXPOSURE_REDUCE = BUILDER
             .comment("Reduce pure-color outline exposure by the item color (shader-compat mode only).",
                     "关闭'附魔光效混合物品颜色'时,描边为纯色且 emissive 全亮,亮色描边在明亮场景下会过曝刺眼。",
                     "true = 纯色描边按物品贴图平均亮度压暗(暗色物品的描边显著变暗,亮色物品基本不变),色相不变;",
@@ -141,7 +141,7 @@ public final class Config {
      * 需要比扁平物品(像素偏移)更大的基础系数才明显。默认 0.3(旧硬编码 0.12 的
      * 2.5 倍);仍觉得细可调大,0.5+ 会较粗。
      */
-    public static final ModConfigSpec.DoubleValue BEWLR_3D_SCALE = BUILDER
+    public static final ForgeConfigSpec.DoubleValue BEWLR_3D_SCALE = BUILDER
             .comment("Outline inflate scale for BEWLR 3D items (enchanted custom-model weapons).",
                     "BEWLR 3D 物品(模组自定义模型武器,如月弧长枪/灾变武器)的描边放大系数。",
                     "3D 描边是几何放大壳,外扩量 = 系数×厚度×点到中心距离;细长武器需要更大的基础系数才明显。",
@@ -161,7 +161,7 @@ public final class Config {
      *       细长武器会有"端部膨胀"。</li>
      * </ul>
      */
-    public static final ModConfigSpec.BooleanValue BEWLR_3D_PER_CUBE = BUILDER
+    public static final ForgeConfigSpec.BooleanValue BEWLR_3D_PER_CUBE = BUILDER
             .comment("Use per-cube vertex-normal expansion for BEWLR 3D outlines (default true).",
                     "BEWLR 3D 描边算法:true = 逐 cube 顶点法线外扩(等厚贴身,端部不膨胀,默认);",
                     "false = 整体包围盒放大壳(旧算法,细长武器端部外扩偏多)。")
@@ -170,13 +170,13 @@ public final class Config {
     // ==================== 颜色 ====================
 
     /** 默认描边色 */
-    public static final ModConfigSpec.ConfigValue<String> DEFAULT_COLOR = BUILDER
+    public static final ForgeConfigSpec.ConfigValue<String> DEFAULT_COLOR = BUILDER
             .comment("Default outline color as hex RGB (RRGGBB).",
                     "未单独配置颜色的附魔所用的默认描边色。")
             .define("defaultColor", "FFC0CB");
 
     /** 逐附魔颜色映射 */
-    public static final ModConfigSpec.ConfigValue<String> ENCHANT_COLORS = BUILDER
+    public static final ForgeConfigSpec.ConfigValue<String> ENCHANT_COLORS = BUILDER
             .comment("Per-enchantment colors as id=RRGGBB, comma separated.",
                     "逐附魔颜色:id=RRGGBB,逗号分隔;未列出的附魔使用默认颜色。")
             .define("enchantColors",
@@ -187,18 +187,18 @@ public final class Config {
                             + "minecraft:looting=FFB6C1,minecraft:smite=FFE4B5");
 
     /** 逐物品颜色映射(覆盖附魔取色,含模组物品) */
-    public static final ModConfigSpec.ConfigValue<String> ITEM_COLORS = BUILDER
+    public static final ForgeConfigSpec.ConfigValue<String> ITEM_COLORS = BUILDER
             .comment("Per-item outline colors as itemid=RRGGBB, comma separated.",
                     "逐物品描边颜色:itemid=RRGGBB,逗号分隔;覆盖该物品的附魔取色(含模组物品)。")
             .define("itemColors", "");
 
     /** 永不描边的物品 id */
-    public static final ModConfigSpec.ConfigValue<String> DISABLED_ITEMS = BUILDER
+    public static final ForgeConfigSpec.ConfigValue<String> DISABLED_ITEMS = BUILDER
             .comment("Comma separated item ids that never get an outline.",
                     "永不描边的物品 id,逗号分隔。")
             .define("disabledItems", "");
 
-    public static final ModConfigSpec SPEC = BUILDER.build();
+    public static final ForgeConfigSpec SPEC = BUILDER.build();
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
@@ -209,7 +209,8 @@ public final class Config {
     public static void save() {
         if (MOD_CONFIG != null) {
             try {
-                MOD_CONFIG.getLoadedConfig().save();
+                // 1.20.1:ModConfig 有 public save()(IConfigSpec 接口无 save)
+                MOD_CONFIG.save();
             } catch (Exception e) {
                 LOGGER.error("Failed to save config", e);
             }

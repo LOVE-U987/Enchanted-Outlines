@@ -2,6 +2,68 @@
 
 ---
 
+## v0.1.6 (2026-08-10) — 1.20.1 Forge 移植版
+
+### 新增: 完整移植到 1.20.1 Forge(与 1.21.1 NeoForge 版功能一致)
+
+- 平台: Minecraft 1.20.1 + Forge 47.4.10(ForgeGradle 6.x + Java 17),与 1.21.1
+  NeoForge 版(<code>移植项目/</code> 目录保留原版参考)同版本号 0.1.6。
+- 构建: <code>org.spongepowered.mixin</code> 0.7.38(MixinGradle 未发布到
+  Gradle Plugin Portal,经 <code>repo.spongepowered.org</code> buildscript 加载;
+  1.20.1 Forge 运行时是 SRG,mixin 必须经 refmap 映射,已由 MixinGradle 生成
+  <code>enchanted_outlines.refmap.json</code>);settings.gradle 增补阿里云镜像
+  加速插件/依赖下载。
+- 全部 API 迁移(1.21.1 NeoForge → 1.20.1 Forge,编译期验证 + 打包成功):
+  - 事件总线/包名: <code>net.neoforged.*</code> → <code>net.minecraftforge.*</code>;
+    <code>NeoForge.EVENT_BUS</code> → <code>MinecraftForge.EVENT_BUS</code>。
+  - 配置: <code>ModConfigSpec</code> → <code>ForgeConfigSpec</code>;
+    <code>ModContainer.registerConfig</code>(1.21.x 独有)→
+    <code>ModLoadingContext.get().registerConfig</code>(1.20.1 唯一标准方式,
+    被 Forge 标记待移除,已 <code>@SuppressWarnings</code>);
+    保存经 <code>ModConfig.save()</code>。
+  - 附魔读取: <code>DataComponents.ENCHANTMENTS</code>/<code>ItemEnchantments</code>
+    (1.21.x 数据组件)→ <code>EnchantmentHelper.getEnchantments</code>
+    (<code>Map&lt;Enchantment, Integer&gt;</code>);
+    附魔/物品 ID 经 <code>BuiltInRegistries.ENCHANTMENT/ITEM.getKey</code>。
+  - 资源定位: <code>ResourceLocation.fromNamespaceAndPath/withDefaultNamespace/parse</code>
+    (Forge 1.20.1 patch 已提供,非 deprecated,与原代码风格一致)。
+  - 客户端入口: <code>@Mod(dist = Dist.CLIENT)</code>(1.21.x)→
+    <code>@OnlyIn(Dist.CLIENT)</code> 标注客户端类(服务器端剥离);
+    配置界面扩展点 <code>IConfigScreenFactory</code> →
+    <code>ConfigScreenHandler.ConfigScreenFactory</code>(registerExtensionPoint
+    第二参为无参 Supplier)。
+  - 盔甲 hook: <code>ClientHooks.getArmorModel/getArmorTexture</code>(1.21.x)→
+    <code>ForgeHooksClient.getArmorModel</code>(返回 Model)+
+    <code>HumanoidArmorLayer.getArmorResource</code>(public,含纹理 hook);
+    1.20.1 的 <code>renderArmorPiece</code> 是 6 参(1.21.1 为 12 参);
+    <code>ArmorMaterial</code> 1.20.1 是接口(无 layers)。
+  - 渲染 API: <code>BakedModel.applyTransform</code>(1.21.x 独有)→ 复刻本体
+    <code>getTransforms().getTransform(ctx).apply → translate(-0.5)</code>;
+    <code>VertexConsumer</code> 11 参 <code>addVertex(int color)</code>(1.21.x)→
+    14 参 <code>vertex(x,y,z,r,g,b,a,u,v,overlay,light,nx,ny,nz)</code>
+    (<code>vertexFull</code> 辅助);<code>ModelPart.Cube.compile</code> 5 参
+    → 8 参(颜色拆 4 个 float);<code>RenderStateShard</code> 常量 1.20.1 是
+    protected → 新建 <code>RenderTypeAccess extends RenderType</code> 转发;
+    <code>MultiBufferSource.immediate(ByteBufferBuilder)</code> →
+    <code>immediate(BufferBuilder)</code>。
+  - mixin: <code>ThrownTrident</code> 无 <code>getPickupItemStackOrigin()</code>
+    (1.21.x)→ 新增 <code>ThrownTridentAccessor</code> 读私有 <code>tridentItem</code>;
+    <code>GuiGraphics.mouseScrolled</code> 4 参 → 3 参;删除 1.21.x 独有的
+    <code>Screen.renderBlurredBackground</code>(1.20.1 本就无模糊背景)。
+  - mods.toml: 1.20.1 格式(loaderVersion <code>[47,)</code>、依赖用
+    <code>mandatory</code>、无 <code>[[mixins]]</code> 段,Forge 自动发现
+    <code>*.mixins.json</code>);硬编码(不参与 Groovy 模板展开,规避模板引擎
+    对 UTF-8 中文词法解析失败)。
+- 1.20.1 行为差异说明: <code>forge:separate_transforms</code> 的 Baked 模型
+  (1.20.1)getQuads/isCustomRenderer 委托 base(几何非空)→ 描边无需子模型切换,
+  与本体取同一模型即一致(1.21.1 NeoForge 版需 applyTransform 切子模型)。
+- 影响文件: 全部 <code>src/main/java</code> 与 <code>src/main/resources</code>
+  (从 1.21.1 源码整体移植改写);<code>build.gradle</code>/<code>gradle.properties</code>/
+  <code>settings.gradle</code> 重建为 1.20.1 Forge 配置;新增
+  <code>RenderTypeAccess.java</code>、<code>ThrownTridentAccessor.java</code>。
+
+---
+
 ## v0.1.6 (2026-08-09)
 
 ### 修复: 灾变武器描边兼容性(映射表 + 预变换分类)

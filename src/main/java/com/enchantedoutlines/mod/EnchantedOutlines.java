@@ -5,11 +5,12 @@ import org.slf4j.Logger;
 import com.enchantedoutlines.mod.config.Config;
 import com.mojang.logging.LogUtils;
 
-import net.neoforged.bus.api.IEventBus;
-import net.neoforged.fml.ModContainer;
-import net.neoforged.fml.common.Mod;
-import net.neoforged.fml.config.ModConfig;
-import net.neoforged.fml.event.config.ModConfigEvent;
+import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.fml.ModContainer;
+import net.minecraftforge.fml.ModLoadingContext;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.config.ModConfig;
+import net.minecraftforge.fml.event.config.ModConfigEvent;
 
 /**
  * Enchanted Outlines 主类（通用侧）。
@@ -23,8 +24,10 @@ public class EnchantedOutlines {
 
     public static final Logger LOGGER = LogUtils.getLogger();
 
+    /** 1.20.1:ModContainer 没有 registerConfig(那是 1.21.x),配置注册经 ModLoadingContext; */
+    @SuppressWarnings({"deprecation", "removal"}) // ModLoadingContext.get() 被 Forge 标记为待移除,1.20.1 下仍为唯一标准方式
     public EnchantedOutlines(IEventBus modEventBus, ModContainer modContainer) {
-        modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
+        ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, Config.SPEC);
         modEventBus.addListener(this::onModConfig);
     }
 

@@ -38,9 +38,9 @@ public abstract class GuiGraphicsMixin {
 
     /** 复刻 ItemRenderer.render 在 GUI 下对特殊物品的模型替换(与 ItemRenderer 同源)。 */
     private static final ModelResourceLocation TRIDENT_MODEL =
-            ModelResourceLocation.inventory(ResourceLocation.withDefaultNamespace("trident"));
+            new ModelResourceLocation(ResourceLocation.withDefaultNamespace("trident"), "inventory");
     private static final ModelResourceLocation SPYGLASS_MODEL =
-            ModelResourceLocation.inventory(ResourceLocation.withDefaultNamespace("spyglass"));
+            new ModelResourceLocation(ResourceLocation.withDefaultNamespace("spyglass"), "inventory");
 
     @Inject(method = "renderItem(Lnet/minecraft/world/entity/LivingEntity;Lnet/minecraft/world/level/Level;Lnet/minecraft/world/item/ItemStack;IIII)V",
             at = @At("HEAD"))
@@ -69,18 +69,11 @@ public abstract class GuiGraphicsMixin {
             // 传当前解析出的模型 transforms(GUI 下 blocking/non-blocking 同用 gui display,无差异)
             model = OutlineRenderer.INSTANCE.shieldModel(model.getTransforms());
         }
-        // ⚠️ 先取 GUI 视角子模型(2026-08-09 XIM 资源包兼容):资源包可用
-        // neoforge:separate_transforms loader 把物品拆成多视角子模型(灾变武器 GUI = 2D
-        // 平面 item/generated,手持 = 3D builtin/entity base)。本体 GuiGraphics.renderItem
-        // → ItemRenderer.render 渲染前就是 model.applyTransform(GUI) 按视角选子模型,描边
-        // 必须拿同一子模型:否则 getQuads() 取到 base(空几何)无描边、isCustomRenderer()
-        // 恒 false 不走 BEWLR 分支。用临时 PoseStack 只取子模型(display 变换由
-        // renderOutline 内部基于子模型 getTransforms() 应用,与本体 applyTransform 一致);
-        // 对普通 BakedModel applyTransform 默认返回 this,行为不变。
-        {
-            BakedModel guiSub = model.applyTransform(ItemDisplayContext.GUI, new PoseStack(), false);
-            model = guiSub;
-        }
+        // ⚠️ 1.20.1 的 BakedModel 接口没有 applyTransform(1.21.1 NeoForge 独有),且
+        // forge:separate_transforms 的 Baked 模型(1.20.1)getQuads 直接委托 base(几何
+        // 非空)、isCustomRenderer 委托 base → 本体 GUI 渲染与描边取同一模型即一致,
+        // 无需子模型切换(GUI display 变换由 renderOutline 内部按 model.getTransforms()
+        // 应用,与本体 ItemRenderer.render 的 getTransforms().apply 一致)。
         if (model.isCustomRenderer()) {
             // BEWLR 物品(GUI,如永恒星光月弧长枪):本体在 ItemRenderer.render 内被替换成
             // 平面 inventory 模型渲染,描边用同一模型才能与物品图标本体对齐

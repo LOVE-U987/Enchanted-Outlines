@@ -15,7 +15,7 @@ import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
 
-import net.neoforged.neoforge.common.ModConfigSpec;
+import net.minecraftforge.common.ForgeConfigSpec;
 
 import org.lwjgl.glfw.GLFW;
 
@@ -137,7 +137,7 @@ public class EnchantedConfigScreen extends Screen {
         this.addRenderableWidget(button);
     }
 
-    private int addBooleanRow(int y, String key, ModConfigSpec.BooleanValue value, int widgetX) {
+    private int addBooleanRow(int y, String key, ForgeConfigSpec.BooleanValue value, int widgetX) {
         CycleButton<Boolean> button = CycleButton.booleanBuilder(
                 Component.translatable(PREFIX + ".value.on"),
                 Component.translatable(PREFIX + ".value.off"))
@@ -151,7 +151,7 @@ public class EnchantedConfigScreen extends Screen {
         return y + ROW_HEIGHT;
     }
 
-    private int addDoubleRow(int y, String key, ModConfigSpec.DoubleValue value, double min, double max, int widgetX) {
+    private int addDoubleRow(int y, String key, ForgeConfigSpec.DoubleValue value, double min, double max, int widgetX) {
         EditBox box = new EditBox(this.font, widgetX, y + 4, WIDGET_WIDTH, 20, Component.empty());
         // 数值输入上限:范围 0-8 的小数最长约 10 位,限制后可防止粘贴超长字符串
         box.setMaxLength(10);
@@ -184,7 +184,7 @@ public class EnchantedConfigScreen extends Screen {
         return y + ROW_HEIGHT;
     }
 
-    private int addColorRow(int y, String key, ModConfigSpec.ConfigValue<String> value, int widgetX) {
+    private int addColorRow(int y, String key, ForgeConfigSpec.ConfigValue<String> value, int widgetX) {
         EditBox box = new EditBox(this.font, widgetX, y + 4, WIDGET_WIDTH, 20, Component.empty());
         // 颜色最长 #RRGGBB 共 7 位,限制后多余的字符无法输入
         box.setMaxLength(7);
@@ -200,7 +200,7 @@ public class EnchantedConfigScreen extends Screen {
         return y + ROW_HEIGHT;
     }
 
-    private int addLongTextRow(int y, String key, ModConfigSpec.ConfigValue<String> value, int widgetX) {
+    private int addLongTextRow(int y, String key, ForgeConfigSpec.ConfigValue<String> value, int widgetX) {
         Button button = Button.builder(Component.literal(truncatePreview(value.get())), b -> {
             this.minecraft.setScreen(new LongTextEditScreen(this,
                     Component.translatable(PREFIX + "." + key),
@@ -229,11 +229,6 @@ public class EnchantedConfigScreen extends Screen {
     }
 
     // ==================== 渲染 ====================
-
-    @Override
-    protected void renderBlurredBackground(float partialTick) {
-        // 禁用模糊背景，避免文字糊化
-    }
 
     @Override
     public void render(GuiGraphics gui, int mouseX, int mouseY, float partialTick) {
@@ -327,12 +322,13 @@ public class EnchantedConfigScreen extends Screen {
     // ==================== 交互 ====================
 
     @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+    public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
         int panelTop = HEADER_HEIGHT;
         int panelBottom = this.height - FOOTER_HEIGHT;
         int visible = panelBottom - panelTop - 12;
         int maxScroll = Math.max(0, rows.size() * ROW_HEIGHT - visible);
-        scrollOffset = (int) Mth.clamp(scrollOffset - scrollY * 12, 0, maxScroll);
+        // 1.20.1 的 mouseScrolled 只有 3 参(无水平滚动参数,那是 1.20.2+)
+        scrollOffset = (int) Mth.clamp(scrollOffset - amount * 12, 0, maxScroll);
         return true;
     }
 
@@ -431,10 +427,6 @@ public class EnchantedConfigScreen extends Screen {
             this.addRenderableWidget(Button.builder(CommonComponents.GUI_CANCEL, b -> onClose())
                     .bounds(this.width / 2 + 10, this.height / 2 + 26, 90, 20)
                     .build());
-        }
-
-        @Override
-        protected void renderBlurredBackground(float partialTick) {
         }
 
         @Override

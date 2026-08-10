@@ -16,7 +16,7 @@ import com.enchantedoutlines.mod.EnchantedOutlines;
 import com.enchantedoutlines.mod.config.Config;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.shaders.Uniform;
-import com.mojang.blaze3d.vertex.ByteBufferBuilder;
+import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -51,7 +51,7 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 
-import net.neoforged.neoforge.client.extensions.common.IClientItemExtensions;
+import net.minecraftforge.client.extensions.common.IClientItemExtensions;
 
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
@@ -365,7 +365,7 @@ public final class OutlineRenderer {
     }
 
     private OutlineRenderer() {
-        this.outlineBuffers = MultiBufferSource.immediate(new ByteBufferBuilder(262144));
+        this.outlineBuffers = MultiBufferSource.immediate(new BufferBuilder(262144));
     }
 
     /** 着色器加载回调入口(供 EnchantedOutlinesClient 调用)。 */
@@ -650,7 +650,7 @@ public final class OutlineRenderer {
             for (ExpandVertex v : quadVertices.get(qi)) {
                 Vector3f p = poseMatrix.transformPosition(
                         v.x() + v.nx() * offset, v.y() + v.ny() * offset, v.z() + v.nz() * offset, tmp);
-                consumer.addVertex(p.x(), p.y(), p.z(), packedColor, v.u(), v.v(),
+                vertexFull(consumer, p.x(), p.y(), p.z(), packedColor, v.u(), v.v(),
                         OverlayTexture.NO_OVERLAY, FULL_BRIGHT, n.getX(), n.getY(), n.getZ());
             }
         }
@@ -1083,10 +1083,36 @@ public final class OutlineRenderer {
             float u = Float.intBitsToFloat(vertices[i + 4]);
             float v = Float.intBitsToFloat(vertices[i + 5]);
             Vector3f p = poseMatrix.transformPosition(x, y, z, tmp);
-            consumer.addVertex(p.x(), p.y(), p.z(), packedColor, u, v,
+            vertexFull(consumer, p.x(), p.y(), p.z(), packedColor, u, v,
                     OverlayTexture.NO_OVERLAY, FULL_BRIGHT,
                     normal.getX(), normal.getY(), normal.getZ());
         }
+    }
+
+    /**
+     * 1.20.1 的 {@link VertexConsumer} 没有 1.21.1 的 11 参
+     * {@code addVertex(x,y,z,int,u,v,int,int,float,float,float)}(那是 1.21.x API)。
+     * 1.20.1 等价调用为 14 参 {@code vertex(x,y,z,r,g,b,a,u,v,overlay,light,nx,ny,nz)}
+     * (颜色拆成 4 个 float,ARGB 顺序)。本方法统一把打包 ARGB 拆成 4 个 float 再写入,
+     * 语义与 1.21.1 的 addVertex(int color) 完全一致(alpha 在最高字节)。
+     *
+     * @param consumer 顶点写入目标
+     * @param x/y/z    位置
+     * @param argb     打包颜色(ARGB,alpha 最高字节)
+     * @param u/v      UV
+     * @param overlay  overlay 打包
+     * @param light    光照打包
+     * @param nx/ny/nz 法线
+     */
+    private static void vertexFull(VertexConsumer consumer, float x, float y, float z, int argb,
+                                   float u, float v, int overlay, int light,
+                                   float nx, float ny, float nz) {
+        consumer.vertex(x, y, z,
+                ((argb >> 16) & 0xFF) / 255.0f,
+                ((argb >> 8) & 0xFF) / 255.0f,
+                (argb & 0xFF) / 255.0f,
+                ((argb >>> 24) & 0xFF) / 255.0f,
+                u, v, overlay, light, nx, ny, nz);
     }
 
     /**
@@ -1346,7 +1372,7 @@ public final class OutlineRenderer {
             float ru = uw > 1e-6f ? (u - u0) / uw : 0.0f;
             float rv = vh > 1e-6f ? (v - v0) / vh : 0.0f;
             Vector3f p = poseMatrix.transformPosition(x, y, z, tmp);
-            consumer.addVertex(p.x(), p.y(), p.z(), 0xFFFFFFFF, ru, rv,
+            vertexFull(consumer, p.x(), p.y(), p.z(), 0xFFFFFFFF, ru, rv,
                     OverlayTexture.NO_OVERLAY, FULL_BRIGHT,
                     normal.getX(), normal.getY(), normal.getZ());
         }
@@ -1371,12 +1397,12 @@ public final class OutlineRenderer {
                     DefaultVertexFormat.NEW_ENTITY, VertexFormat.Mode.QUADS, 1024, false, false,
                     RenderType.CompositeState.builder()
                             .setShaderState(new RenderStateShard.ShaderStateShard(() -> this.outlineShader))
-                            .setTextureState(RenderStateShard.BLOCK_SHEET)
-                            .setTransparencyState(RenderStateShard.TRANSLUCENT_TRANSPARENCY)
-                            .setCullState(RenderStateShard.NO_CULL)
-                            .setDepthTestState(RenderStateShard.LEQUAL_DEPTH_TEST)
-                            .setWriteMaskState(RenderStateShard.COLOR_WRITE)
-                            .setLightmapState(RenderStateShard.NO_LIGHTMAP)
+                            .setTextureState(RenderTypeAccess.BLOCK_SHEET)
+                            .setTransparencyState(RenderTypeAccess.TRANSLUCENT_TRANSPARENCY)
+                            .setCullState(RenderTypeAccess.NO_CULL)
+                            .setDepthTestState(RenderTypeAccess.LEQUAL_DEPTH_TEST)
+                            .setWriteMaskState(RenderTypeAccess.COLOR_WRITE)
+                            .setLightmapState(RenderTypeAccess.NO_LIGHTMAP)
                             .createCompositeState(false));
             this.outlineRenderType = type;
         }
@@ -1394,12 +1420,12 @@ public final class OutlineRenderer {
                     DefaultVertexFormat.NEW_ENTITY, VertexFormat.Mode.QUADS, 1024, false, false,
                     RenderType.CompositeState.builder()
                             .setShaderState(new RenderStateShard.ShaderStateShard(() -> this.outlineShader))
-                            .setTextureState(RenderStateShard.BLOCK_SHEET)
-                            .setTransparencyState(RenderStateShard.TRANSLUCENT_TRANSPARENCY)
-                            .setCullState(RenderStateShard.NO_CULL)
-                            .setDepthTestState(RenderStateShard.LEQUAL_DEPTH_TEST)
-                            .setWriteMaskState(RenderStateShard.COLOR_WRITE)
-                            .setLightmapState(RenderStateShard.NO_LIGHTMAP)
+                            .setTextureState(RenderTypeAccess.BLOCK_SHEET)
+                            .setTransparencyState(RenderTypeAccess.TRANSLUCENT_TRANSPARENCY)
+                            .setCullState(RenderTypeAccess.NO_CULL)
+                            .setDepthTestState(RenderTypeAccess.LEQUAL_DEPTH_TEST)
+                            .setWriteMaskState(RenderTypeAccess.COLOR_WRITE)
+                            .setLightmapState(RenderTypeAccess.NO_LIGHTMAP)
                             .createCompositeState(false));
             this.handOutlineRenderType = type;
         }
@@ -1432,14 +1458,14 @@ public final class OutlineRenderer {
             type = RenderType.create("enchanted_outlines_world_outline",
                     DefaultVertexFormat.NEW_ENTITY, VertexFormat.Mode.QUADS, 1024, false, false,
                     RenderType.CompositeState.builder()
-                            .setShaderState(RenderStateShard.RENDERTYPE_ENTITY_TRANSLUCENT_EMISSIVE_SHADER)
-                            .setTextureState(RenderStateShard.BLOCK_SHEET)
-                            .setTransparencyState(RenderStateShard.TRANSLUCENT_TRANSPARENCY)
-                            .setCullState(RenderStateShard.NO_CULL)
-                            .setDepthTestState(RenderStateShard.LEQUAL_DEPTH_TEST)
-                            .setWriteMaskState(RenderStateShard.COLOR_WRITE)
-                            .setLightmapState(RenderStateShard.LIGHTMAP)
-                            .setOverlayState(RenderStateShard.OVERLAY)
+                            .setShaderState(RenderTypeAccess.RENDERTYPE_ENTITY_TRANSLUCENT_EMISSIVE_SHADER)
+                            .setTextureState(RenderTypeAccess.BLOCK_SHEET)
+                            .setTransparencyState(RenderTypeAccess.TRANSLUCENT_TRANSPARENCY)
+                            .setCullState(RenderTypeAccess.NO_CULL)
+                            .setDepthTestState(RenderTypeAccess.LEQUAL_DEPTH_TEST)
+                            .setWriteMaskState(RenderTypeAccess.COLOR_WRITE)
+                            .setLightmapState(RenderTypeAccess.LIGHTMAP)
+                            .setOverlayState(RenderTypeAccess.OVERLAY)
                             .createCompositeState(false));
             this.worldOutlineRenderTypes.put(TextureAtlas.LOCATION_BLOCKS, type);
         }
@@ -1466,14 +1492,14 @@ public final class OutlineRenderer {
             type = RenderType.create("enchanted_outlines_world_entity_outline",
                     DefaultVertexFormat.NEW_ENTITY, VertexFormat.Mode.QUADS, 1024, false, false,
                     RenderType.CompositeState.builder()
-                            .setShaderState(RenderStateShard.RENDERTYPE_ENTITY_TRANSLUCENT_EMISSIVE_SHADER)
+                            .setShaderState(RenderTypeAccess.RENDERTYPE_ENTITY_TRANSLUCENT_EMISSIVE_SHADER)
                             .setTextureState(new RenderStateShard.TextureStateShard(texture, false, false))
-                            .setTransparencyState(RenderStateShard.TRANSLUCENT_TRANSPARENCY)
-                            .setCullState(RenderStateShard.NO_CULL)
-                            .setDepthTestState(RenderStateShard.LEQUAL_DEPTH_TEST)
-                            .setWriteMaskState(RenderStateShard.COLOR_WRITE)
-                            .setLightmapState(RenderStateShard.LIGHTMAP)
-                            .setOverlayState(RenderStateShard.OVERLAY)
+                            .setTransparencyState(RenderTypeAccess.TRANSLUCENT_TRANSPARENCY)
+                            .setCullState(RenderTypeAccess.NO_CULL)
+                            .setDepthTestState(RenderTypeAccess.LEQUAL_DEPTH_TEST)
+                            .setWriteMaskState(RenderTypeAccess.COLOR_WRITE)
+                            .setLightmapState(RenderTypeAccess.LIGHTMAP)
+                            .setOverlayState(RenderTypeAccess.OVERLAY)
                             .createCompositeState(false));
             this.worldOutlineRenderTypes.put(texture, type);
         }
@@ -1617,9 +1643,9 @@ public final class OutlineRenderer {
                 new ModelResourceLocation(ResourceLocation.fromNamespaceAndPath(ns, "item/" + path + "_inventory"), "inventory"),
                 new ModelResourceLocation(ResourceLocation.fromNamespaceAndPath(ns, path + "_inventory"), "standalone"),
                 // 通用约定:<id>_inventory#inventory / <id>#standalone / <id>#inventory
-                ModelResourceLocation.inventory(ResourceLocation.fromNamespaceAndPath(ns, path + "_inventory")),
+                new ModelResourceLocation(ResourceLocation.fromNamespaceAndPath(ns, path + "_inventory"), "inventory"),
                 new ModelResourceLocation(ResourceLocation.fromNamespaceAndPath(ns, path), "standalone"),
-                ModelResourceLocation.inventory(id));
+                new ModelResourceLocation(id, "inventory"));
         for (ModelResourceLocation mrl : candidates) {
             BakedModel model = manager.getModel(mrl);
             if (isUsableInventoryModel(manager, model)) {
@@ -1946,7 +1972,7 @@ public final class OutlineRenderer {
             if (bewlr == null) {
                 return;
             }
-            MultiBufferSource.BufferSource tmp = MultiBufferSource.immediate(new ByteBufferBuilder(1024));
+            MultiBufferSource.BufferSource tmp = MultiBufferSource.immediate(new BufferBuilder(1024));
             try {
                 bewlr.renderByItem(stack, ItemDisplayContext.NONE, new PoseStack(), tmp,
                         0xF000F0, OverlayTexture.NO_OVERLAY);
@@ -2129,7 +2155,7 @@ public final class OutlineRenderer {
                     ec.x[i] + ec.nx[i] * offset,
                     ec.y[i] + ec.ny[i] * offset,
                     ec.z[i] + ec.nz[i] * offset, tmp);
-            consumer.addVertex(p.x(), p.y(), p.z(), packedColor,
+            vertexFull(consumer, p.x(), p.y(), p.z(), packedColor,
                     ec.u[i], ec.v[i], OverlayTexture.NO_OVERLAY, FULL_BRIGHT,
                     ec.nx[i], ec.ny[i], ec.nz[i]);
         }
@@ -2662,7 +2688,12 @@ public final class OutlineRenderer {
                     .translate(-cx, -cy, -cz);
             p.pose().mul(transform);
             try {
-                cube.compile(p, consumer, FULL_BRIGHT, OverlayTexture.NO_OVERLAY, packedColor);
+                // 1.20.1 的 Cube.compile 是 8 参(颜色为 4 个 float;1.21.1 才是 5 参 int 打包色)
+                cube.compile(p, consumer, FULL_BRIGHT, OverlayTexture.NO_OVERLAY,
+                        ((packedColor >> 16) & 0xFF) / 255.0f,
+                        ((packedColor >> 8) & 0xFF) / 255.0f,
+                        (packedColor & 0xFF) / 255.0f,
+                        ((packedColor >>> 24) & 0xFF) / 255.0f);
             } finally {
                 p.pose().set(original);
             }
@@ -2805,11 +2836,11 @@ public final class OutlineRenderer {
                     RenderType.CompositeState.builder()
                             .setShaderState(new RenderStateShard.ShaderStateShard(() -> this.outlineShader))
                             .setTextureState(new RenderStateShard.TextureStateShard(texture, false, false))
-                            .setTransparencyState(RenderStateShard.TRANSLUCENT_TRANSPARENCY)
-                            .setCullState(RenderStateShard.NO_CULL)
-                            .setDepthTestState(RenderStateShard.LEQUAL_DEPTH_TEST)
-                            .setWriteMaskState(RenderStateShard.COLOR_WRITE)
-                            .setLightmapState(RenderStateShard.NO_LIGHTMAP)
+                            .setTransparencyState(RenderTypeAccess.TRANSLUCENT_TRANSPARENCY)
+                            .setCullState(RenderTypeAccess.NO_CULL)
+                            .setDepthTestState(RenderTypeAccess.LEQUAL_DEPTH_TEST)
+                            .setWriteMaskState(RenderTypeAccess.COLOR_WRITE)
+                            .setLightmapState(RenderTypeAccess.NO_LIGHTMAP)
                             .createCompositeState(false));
             this.armorRenderTypes.put(texture, type);
         }

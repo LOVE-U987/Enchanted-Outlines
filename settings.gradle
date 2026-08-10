@@ -1,9 +1,16 @@
 pluginManagement {
     repositories {
         gradlePluginPortal()
+        // 国内网络加速:MixinGradle 等插件经阿里云镜像下载
+        maven { url = 'https://maven.aliyun.com/repository/gradle-plugin' }
+        maven { url = 'https://maven.aliyun.com/repository/central' }
+        maven {
+            name = 'MinecraftForge'
+            url = 'https://maven.minecraftforge.net/'
+        }
     }
 }
 
 plugins {
-    id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '0.7.0'
 }

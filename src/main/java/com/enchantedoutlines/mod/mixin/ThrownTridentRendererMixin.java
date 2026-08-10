@@ -33,11 +33,14 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * 实体模型绕各 cube 中心放大壳描边(与盔甲同一套算法),本体随后覆盖。
  * <p>
  * <b>附魔判断用 {@code trident.isFoil()}(ID_FOIL 布尔随 spawn 数据同步,原版渲染器
- * 也靠它画箔光),不能用 {@code getPickupItemStackOrigin()} 的附魔</b>:客户端实体由
- * {@code (EntityType, Level)} 构造器创建,{@code pickupItemStack} 字段固定为
- * {@code getDefaultPickupItem()}(无附魔三叉戟)且不随 SynchedEntityData 同步 →
+ * 也靠它画箔光),不能用 {@code getPickupItem()} 的附魔</b>:客户端实体由
+ * {@code (EntityType, Level)} 构造器创建,{@code tridentItem} 字段固定为
+ * {@code new ItemStack(Items.TRIDENT)}(无附魔三叉戟)且不随 SynchedEntityData 同步 →
  * 客户端永远拿不到投掷物的附魔列表,颜色退化为物品固定色/默认色
  * ({@link ColorResolver#resolveFoilOnly})。
+ * <p>
+ * 1.20.1 的 {@code ThrownTrident} 无 {@code getPickupItemStackOrigin()}(那是 1.21.x),
+ * 私有字段 {@code tridentItem} 经 {@link ThrownTridentAccessor} 读取。
  */
 @Mixin(ThrownTridentRenderer.class)
 public abstract class ThrownTridentRendererMixin {
@@ -54,7 +57,8 @@ public abstract class ThrownTridentRendererMixin {
         if (!Config.ENABLE.get() || !trident.isFoil()) {
             return;
         }
-        ItemStack stack = trident.getPickupItemStackOrigin();
+        // 1.20.1:ThrownTrident 私有字段 tridentItem(无公开 getter)经 accessor 读取
+        ItemStack stack = ((ThrownTridentAccessor) trident).enchantedoutlines$getTridentItem();
         if (stack.isEmpty()) {
             return;
         }

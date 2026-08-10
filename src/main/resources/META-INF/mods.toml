@@ -1,0 +1,31 @@
+# 1.20.1 Forge 移植版 mod 元数据(硬编码,不依赖 Groovy 模板展开 ——
+# 模板引擎对 UTF-8 中文多行文本词法解析不稳定,且本文件值均为常量)。
+modLoader="javafml"
+loaderVersion="[47,)"
+license="MIT"
+
+[[mods]]
+modId="enchanted_outlines"
+version="0.1.6"
+displayName="Enchanted Outlines"
+credits="A client-side outline renderer for enchanted items."
+authors="LOVE-U987"
+description='''
+Enchanted Outlines — 为背包与快捷栏中带有附魔的物品渲染彩色轮廓描边。
+按附魔分色（锐利金、火焰橙……），绘制时程序化生成，对任意模组物品同样生效。
+A client-side mod that renders colored outlines around enchanted items in inventories and hotbar.
+'''
+
+[[dependencies.enchanted_outlines]]
+    modId="forge"
+    mandatory=true
+    versionRange="[47,)"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.enchanted_outlines]]
+    modId="minecraft"
+    mandatory=true
+    versionRange="[1.20.1,1.21)"
+    ordering="NONE"
+    side="BOTH"

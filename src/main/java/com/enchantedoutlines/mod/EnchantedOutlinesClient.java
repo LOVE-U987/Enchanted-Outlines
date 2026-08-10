@@ -10,19 +10,25 @@ import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.resources.ResourceLocation;
 
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.bus.api.IEventBus;
-import net.neoforged.fml.ModContainer;
-import net.neoforged.fml.common.Mod;
-import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
-import net.neoforged.neoforge.client.event.RegisterShadersEvent;
-import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.api.distmarker.OnlyIn;
+import net.minecraftforge.client.ConfigScreenHandler;
+import net.minecraftforge.client.event.RegisterShadersEvent;
+import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.fml.ModContainer;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 
 /**
  * 客户端入口:把自定义配置界面挂到 Mod 列表的「配置」按钮上,
  * 注册描边核心着色器,并在客户端启动时触发扩展注册事件。
+ * <p>
+ * 1.20.1 的 {@code @Mod} 注解没有 {@code dist} 参数(那是 1.21.x),客户端专用类
+ * 用 {@code @OnlyIn(Dist.CLIENT)} 标注:服务器端该类被 Forge 类加载器剥离,
+ * 仅客户端生效(1.20.1 标准做法)。
  */
-@Mod(value = EnchantedOutlines.MODID, dist = Dist.CLIENT)
+@Mod(value = EnchantedOutlines.MODID)
+@OnlyIn(Dist.CLIENT)
 public class EnchantedOutlinesClient {
 
     /** 描边着色器位置 → enchanted_outlines:shaders/core/outline.{json,vsh,fsh} */
@@ -30,8 +36,11 @@ public class EnchantedOutlinesClient {
             ResourceLocation.fromNamespaceAndPath(EnchantedOutlines.MODID, "outline");
 
     public EnchantedOutlinesClient(IEventBus modEventBus, ModContainer container) {
-        container.registerExtensionPoint(IConfigScreenFactory.class,
-                (modContainer, parentScreen) -> new EnchantedConfigScreen(parentScreen));
+        // 1.20.1:配置界面扩展点是 ConfigScreenHandler.ConfigScreenFactory(1.21.1 才改名为
+        // IConfigScreenFactory);registerExtensionPoint 第二参是 IExtensionPoint.Consumer(无参工厂)
+        container.registerExtensionPoint(ConfigScreenHandler.ConfigScreenFactory.class,
+                () -> new ConfigScreenHandler.ConfigScreenFactory(
+                        (minecraft, parentScreen) -> new EnchantedConfigScreen(parentScreen)));
         modEventBus.addListener(this::onRegisterShaders);
         modEventBus.addListener(this::onClientSetup);
     }

@@ -1,7 +1,7 @@
 package com.enchantedoutlines.mod.outline;
 
-import net.neoforged.bus.api.Event;
-import net.neoforged.neoforge.common.NeoForge;
+import net.minecraftforge.eventbus.api.Event;
+import net.minecraftforge.common.MinecraftForge;
 
 /**
  * Enchanted Outlines 扩展注册事件。
@@ -11,7 +11,7 @@ import net.neoforged.neoforge.common.NeoForge;
  * <p>
  * 消费方示例(任意客户端类,在构造函数中注册):
  * <pre>{@code
- * NeoForge.EVENT_BUS.addListener(OutlineColorEvent.class, event -> {
+ * MinecraftForge.EVENT_BUS.addListener(OutlineColorEvent.class, event -> {
  *     OutlineColorRegistry.registerItemColor(
  *             ResourceLocation.fromNamespaceAndPath("mymod", "magic_sword"), 0xFF00FF00);
  *     OutlineColorRegistry.disableItem(
@@ -28,6 +28,6 @@ public final class OutlineColorEvent extends Event {
      * 供本模组内部触发;其他模组无需调用。
      */
     public static void fire() {
-        NeoForge.EVENT_BUS.post(new OutlineColorEvent());
+        MinecraftForge.EVENT_BUS.post(new OutlineColorEvent());
     }
 }

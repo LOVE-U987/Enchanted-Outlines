@@ -130,9 +130,46 @@
   `tools/check_png_trns.py`(基于 Pillow),不要手写 PNG 解码或猜。
 - 截图分析用 `tools/analyze_screenshot.py`(统计描边色像素密度判断实心/轮廓)。
 
-## 构建与测试
+## 构建与测试(1.20.1 Forge 移植版)
 
+- 平台: Minecraft 1.20.1 + Forge 47.4.10,ForgeGradle 6.x + Java 17。
 - 编译检查:`.\gradlew.bat compileJava`(PowerShell 的 exit code 1 是 gradle stderr 误报,
-  看 BUILD SUCCESSFUL)。
+  看 BUILD SUCCESSFUL);完整打包 `.\gradlew.bat build`(含 reobfJar)。
 - 运行:`.\gradlew.bat runClient "-PdevArgs=--quickPlaySingleplayer 新的世界"`。
 - 渲染改动必须实际跑游戏验证,不能只编译通过就提交。
+- **MixinGradle 构建注意事项**:
+  - `org.spongepowered.mixin` 插件**未发布到 Gradle Plugin Portal**,经 buildscript 从
+    `repo.spongepowered.org` 加载(`classpath 'org.spongepowered:mixingradle:0.7.38'`)。
+  - 1.20.1 Forge 运行时是 **SRG** 映射,mixin 必须靠 refmap 把 mojmap 目标映射到 SRG;
+    refmap 由 MixinGradle 生成(`enchanted_outlines.refmap.json`),已在 mixins.json 声明。
+  - 新增 mixin 类必须加入 `src/main/resources/enchanted_outlines.mixins.json` 的
+    `client` 列表,否则不生效。
+- **1.20.1 与 1.21.1 NeoForge 版 API 差异速查**(移植时对照,详见 Changelog v0.1.6 移植条目):
+  - 事件总线/包名 `net.neoforged.*` → `net.minecraftforge.*`;`NeoForge.EVENT_BUS` →
+    `MinecraftForge.EVENT_BUS`。
+  - 配置 `ModConfigSpec` → `ForgeConfigSpec`;注册经 `ModLoadingContext.get()
+    .registerConfig`(1.20.1 唯一标准方式,被标记待移除需 `@SuppressWarnings`);
+    保存用 `ModConfig.save()`。
+  - 附魔读取 `DataComponents.ENCHANTMENTS` → `EnchantmentHelper.getEnchantments`
+    (返回 `Map<Enchantment, Integer>`);ID 经 `BuiltInRegistries.*.getKey`。
+  - `ResourceLocation.fromNamespaceAndPath/withDefaultNamespace/parse` 在 Forge
+    1.20.1 patch 中已提供且非 deprecated,直接使用。
+  - 客户端类 `@Mod(dist=...)` → `@OnlyIn(Dist.CLIENT)`;配置界面扩展点
+    `IConfigScreenFactory` → `ConfigScreenHandler.ConfigScreenFactory`(第二参无参 Supplier)。
+  - 盔甲 hook `ClientHooks` → `ForgeHooksClient.getArmorModel`(返回 Model)+
+    `HumanoidArmorLayer.getArmorResource(entity, stack, slot, type)`(public,含纹理 hook);
+    `renderArmorPiece` 1.20.1 是 **6 参**;`ArmorMaterial` 是接口(无 layers)。
+  - `BakedModel` 无 `applyTransform` → 复刻本体 `getTransforms().getTransform(ctx).apply`
+    → `translate(-0.5)`;`forge:separate_transforms` 的 Baked 模型 getQuads 委托 base
+    (几何非空,无需子模型切换)。
+  - `VertexConsumer` 无 11 参 `addVertex(int)` → 用 `vertexFull` 辅助
+    (14 参 `vertex(x,y,z,r,g,b,a,u,v,overlay,light,nx,ny,nz)`);
+    `ModelPart.Cube.compile` 8 参(颜色 4 个 float)。
+  - `RenderStateShard` 常量 1.20.1 是 **protected** → 经 `RenderTypeAccess extends
+    RenderType` 转发(1.21.1 才 public)。
+  - `MultiBufferSource.immediate(ByteBufferBuilder)` → `immediate(BufferBuilder)`。
+  - `ThrownTrident` 无 `getPickupItemStackOrigin()` → `ThrownTridentAccessor` 读
+    `tridentItem`;`GuiGraphics.mouseScrolled` 3 参;无 `Screen.renderBlurredBackground`。
+  - mods.toml 1.20.1 格式:`loaderVersion="[47,)"`、依赖 `mandatory=true`、无
+    `[[mixins]]` 段(Forge 自动发现 `*.mixins.json`);<b>不要</b>用 Groovy 模板
+    `expand` 处理含中文的 mods.toml(词法解析会失败),直接硬编码。
