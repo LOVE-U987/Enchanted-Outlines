@@ -154,7 +154,12 @@
     (返回 `Map<Enchantment, Integer>`);ID 经 `BuiltInRegistries.*.getKey`。
   - `ResourceLocation.fromNamespaceAndPath/withDefaultNamespace/parse` 在 Forge
     1.20.1 patch 中已提供且非 deprecated,直接使用。
-  - 客户端类 `@Mod(dist=...)` → `@OnlyIn(Dist.CLIENT)`;配置界面扩展点
+  - ⚠️ <b>mod 主类构造器铁律</b>:1.20.1 的 FML 只支持
+    `(FMLJavaModLoadingContext)` 或无参构造器(<b>不支持</b> 1.21.x 的
+    `(IEventBus, ModContainer)`,否则启动报 `NoSuchMethodException: <init>()`);
+    事件总线经 `context.getModEventBus()`。
+  - 客户端专用逻辑:`@Mod` 只有 `value()`,用
+    `@Mod.EventBusSubscriber(bus=MOD, value=Dist.CLIENT)` + `@OnlyIn(Dist.CLIENT)`;配置界面扩展点
     `IConfigScreenFactory` → `ConfigScreenHandler.ConfigScreenFactory`(第二参无参 Supplier)。
   - 盔甲 hook `ClientHooks` → `ForgeHooksClient.getArmorModel`(返回 Model)+
     `HumanoidArmorLayer.getArmorResource(entity, stack, slot, type)`(public,含纹理 hook);
@@ -173,3 +178,6 @@
   - mods.toml 1.20.1 格式:`loaderVersion="[47,)"`、依赖 `mandatory=true`、无
     `[[mixins]]` 段(Forge 自动发现 `*.mixins.json`);<b>不要</b>用 Groovy 模板
     `expand` 处理含中文的 mods.toml(词法解析会失败),直接硬编码。
+  - <b>pack.mcmeta 必须存在</b>(pack_format=15):dev 环境 mod 资源作为资源包
+    加载,缺 mcmeta 整个 pack 被跳过 → 着色器/语言文件加载不到(实测
+    "Failed to load the outline shader: FileNotFoundException ...outline.json")。

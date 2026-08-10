@@ -54,6 +54,12 @@
     <code>mandatory</code>、无 <code>[[mixins]]</code> 段,Forge 自动发现
     <code>*.mixins.json</code>);硬编码(不参与 Groovy 模板展开,规避模板引擎
     对 UTF-8 中文词法解析失败)。
+  - <b>pack.mcmeta</b>(pack_format=15): 1.20.1 dev 环境 mod 资源作为资源包
+    加载,缺 mcmeta 会被跳过 → 着色器/语言文件加载不到(实测修复前
+    "Failed to load the outline shader: FileNotFoundException
+    enchanted_outlines:shaders/core/outline.json")。
+- 运行验证(2026-08-10 实跑): 1.20.1 Forge 47.4.10 启动成功,mod 实例创建、
+  配置生成、outline 着色器注册、mixin 应用全部通过,正常进入单机世界。
 - 1.20.1 行为差异说明: <code>forge:separate_transforms</code> 的 Baked 模型
   (1.20.1)getQuads/isCustomRenderer 委托 base(几何非空)→ 描边无需子模型切换,
   与本体取同一模型即一致(1.21.1 NeoForge 版需 applyTransform 切子模型)。
