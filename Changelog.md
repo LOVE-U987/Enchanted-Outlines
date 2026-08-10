@@ -2,6 +2,41 @@
 
 ---
 
+## v0.1.6 (2026-08-10) — 1.20.1 方形轮廓排查记录
+
+### 排查结论(实测诊断 + 代码对比)
+
+- 实测(dev 环境,1.20.1 Forge 47.4.10,无光影):进世界后自动给玩家塞
+  <b>附魔钻石剑/镐/附魔书(扁平)+ TNT(3D 方块)+ 全套附魔钻甲</b>,诊断输出:
+  - GUI 扁平(剑/镐/附魔书):<code>shader=true fallback=false</code>,
+    sprite=<code>item/diamond_sword</code> 等,<code>origImg=true</code>
+    (反射拿原图成功),UV 为 atlas 绝对坐标,alpha 分布正常(剑 19/64 不透明,
+    工具大多透明)→ <b>形状正确</b>;
+  - GUI 3D(TNT):<code>gui3d=true quads=6</code> 正常;
+  - HAND 手持:<b>正常</b>;
+  - 盔甲 PNG(<code>textures/models/armor/diamond_layer_1.png</code>)
+    <code>exists=true</code>,ImageIO 读取路径正常。
+  - <b>结论:无光影 dev 环境下,原版物品的所有渲染路径(GUI/手持/3D/盔甲纹理)
+    均正常</b>。
+- 代码对比:1.20.1 移植版 <code>OutlineRenderer</code> 与 1.21.1 参考版
+  <b>渲染逻辑 100% 等价</b>(唯一差异为必要的 API 适配:vertexFull 14 参
+  vertex、Cube.compile 8 参、RenderTypeAccess 常量转发、BufferBuilder);
+  1.20.1 与 1.21.1 的 <code>entity_translucent_emissive</code> fsh 完全相同;
+  Config 默认值一致。
+- <b>若玩家仍看到方形轮廓,需以下信息继续定位</b>(很可能与整合包环境有关):
+  1. 方形出现在<b>哪个界面</b>(背包/HUD/手持/盔甲/掉落物/展示框)?
+  2. 是<b>哪类物品</b>(原版剑/工具/方块/盔甲/模组武器)?
+  3. 是否<b>开启光影</b>(Oculus/Iris + 光影包)?——光影 fallback 路径
+     (BLOCK_SHEET 采样)与无光影(自定义 shader)行为不同,1.20.1 的 Oculus
+     对 BLOCK_SHEET 的 gbuffer 处理可能把扁平物品当方块材质(与 README 已知
+     "盾/三叉戟反射方块纹理"同类);
+  4. 方形是<b>实心填充</b>还是<b>描边环</b>?实心 = 贴图 alpha 丢失(铁律#1),
+     描边环 = 几何/UV 问题。
+- 排查过程说明:曾加临时诊断代码(GUI/HAND/盔甲各路径打印 sprite/UV/alpha/
+  shader/fallback 状态)实测后已全部清理,当前代码干净(0 警告)。
+
+---
+
 ## v0.1.6 (2026-08-10) — 1.20.1 Forge 移植版
 
 ### 新增: 完整移植到 1.20.1 Forge(与 1.21.1 NeoForge 版功能一致)
