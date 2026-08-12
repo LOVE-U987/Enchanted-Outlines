@@ -12,15 +12,6 @@ out vec4 fragColor;
 
 void main() {
     vec4 texel = texture(Sampler0, texCoord0);
-    // ⚠️ 1.20.1 差异:物品贴图透明背景上传到图集后变为"纯黑不透明"
-    // (RGB≈0 且 alpha=1)。若不处理,主面(1×1 正方形)的 alpha 遮罩全满 →
-    // 描边显示为实心方形(用户描述:"两个侧面正方形、剑刃缺失")。
-    // 修复:把黑色像素视为透明通道,主面只在剑形像素上显示 → 恢复物品轮廓。
-    // 阈值取 RGB 亮度 < 0.05(≈13/255):只吞纯黑背景,保留剑身/剑柄暗色细节。
-    float lum = dot(texel.rgb, vec3(0.299, 0.587, 0.114));
-    if (lum < 0.05) {
-        texel.a = 0.0;
-    }
     // 描边核心:贴图只提供 alpha 遮罩(物品形状),RGB 一律用纯描边色
     // OutlineAlphaBoost > 1 时把贴图边缘的渐变 alpha 抬升为实心,让手持描边不透明
     float a = clamp(texel.a * vertexColor.a * OutlineAlphaBoost, 0.0, 1.0);

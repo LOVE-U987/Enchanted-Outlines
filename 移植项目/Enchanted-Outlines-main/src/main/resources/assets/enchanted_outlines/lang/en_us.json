@@ -1,0 +1,58 @@
+{
+  "enchanted_outlines.config.title": "Enchanted Outlines",
+  "enchanted_outlines.config.subtitle": "Colored outlines for enchanted items",
+  "enchanted_outlines.config.saved": "Saved to disk",
+  "enchanted_outlines.config.scroll_hint": "Scroll to see more options",
+  "enchanted_outlines.config.value.on": "ON",
+  "enchanted_outlines.config.value.off": "OFF",
+
+  "enchanted_outlines.config.category.general": "General",
+  "enchanted_outlines.config.category.colors": "Colors",
+
+  "enchanted_outlines.config.enable": "Enable Outlines",
+  "enchanted_outlines.config.enable.tooltip": "Master switch. When off, no outline is rendered anywhere.",
+
+  "enchanted_outlines.config.thickness": "Item Outline Thickness",
+  "enchanted_outlines.config.thickness.tooltip": "How many pixels the outline expands beyond the item sprite (GUI / held items / projectiles). Decimal values are allowed. 0 disables the expansion.",
+
+  "enchanted_outlines.config.armorThickness": "Armor Outline Thickness",
+  "enchanted_outlines.config.armorThickness.tooltip": "How many pixels the outline expands beyond the worn armor model. Decimal values are allowed. 0 disables the expansion.",
+
+  "enchanted_outlines.config.itemPixelColorGlint": "Mix Outline With Item Colors",
+  "enchanted_outlines.config.itemPixelColorGlint.tooltip": "Shader-compat mode only: when ON, the outline color is mixed with each item pixel color (applies to flat and 3D items; keeps the item silhouette; the mixed colors look unique). When OFF, the outline is a pure color — flat items still keep their silhouette (reads texture alpha; one-time cost on first render), 3D items keep their geometry-driven shape. Shield/trident box models are always pure color.",
+
+  "enchanted_outlines.config.armorPixelColorGlint": "Mix Armor Outline With Texture",
+  "enchanted_outlines.config.armorPixelColorGlint.tooltip": "Shader-compat mode only: when ON, armor/elytra/projectile outlines sample the original texture alpha mask (hug the layered texture silhouette; color mixes with the texture). When OFF, the outline is a pure color (shape follows the model geometry).",
+
+  "enchanted_outlines.config.outlineExposureReduce": "Reduce Exposure By Item Color",
+  "enchanted_outlines.config.outlineExposureReduce.tooltip": "Shader-compat mode only, applies when color mixing is OFF: the pure-color outline is darkened by the item texture's average brightness (dark items like iron swords get much dimmer outlines, bright items stay bright), mimicking how the mix mode lowers exposure by the item color — hue is preserved. When OFF, pure-color outlines keep their full brightness.",
+
+  "enchanted_outlines.config.bewlr3dScale": "BEWLR 3D Outline Scale",
+  "enchanted_outlines.config.bewlr3dScale.tooltip": "Outline inflate scale for modded custom-model weapons (BEWLR, e.g. crescent spear / Cataclysm weapons). The 3D expansion is thickness x scale x distance-to-center (whole-box) or a fixed offset (per-cube); slender weapons need a larger base scale to look visible.",
+
+  "enchanted_outlines.config.bewlr3dPerCube": "Per-Cube Vertex-Normal Expansion",
+  "enchanted_outlines.config.bewlr3dPerCube.tooltip": "true = per-cube vertex-normal expansion (uniform thickness, no tip inflation on slender weapons; recommended). false = whole bounding-box inflation (old algorithm, tips expand more).",
+
+  "enchanted_outlines.config.armorUniformExpand": "Uniform Armor Outline Thickness",
+  "enchanted_outlines.config.armorUniformExpand.tooltip": "true = every armor part (cube) expands by a fixed thickness, so modded fine-grained models (e.g. thermal springstone armor) get outlines as thick as vanilla armor. false = scale proportional to part size (old algorithm; small parts get thinner outlines).",
+
+  "enchanted_outlines.config.mergeMode": "Multi-Enchant Color",
+  "enchanted_outlines.config.mergeMode.tooltip": "When an item has several enchantments, which color wins?",
+  "enchanted_outlines.config.mergeMode.highest": "Highest level first",
+  "enchanted_outlines.config.mergeMode.first": "First in list",
+
+  "enchanted_outlines.config.defaultColor": "Default Color",
+  "enchanted_outlines.config.defaultColor.tooltip": "Hex RGB (RRGGBB) used for enchantments that have no specific color mapped. The outline is fully opaque.",
+
+  "enchanted_outlines.config.enchantColors": "Per-Enchant Colors",
+  "enchanted_outlines.config.enchantColors.tooltip": "Comma-separated map: id=RRGGBB. e.g. minecraft:sharpness=FFD700,minecraft:fire_aspect=FF6A00. Uses the default color when an enchantment is not listed.",
+
+  "enchanted_outlines.config.itemColors": "Per-Item Colors",
+  "enchanted_outlines.config.itemColors.tooltip": "Comma-separated map: itemid=RRGGBB. Overrides the enchantment color for that item; modded item ids work directly.",
+
+  "enchanted_outlines.config.disabledItems": "Disabled Items",
+  "enchanted_outlines.config.disabledItems.tooltip": "Comma-separated item ids that never get an outline, even when enchanted.",
+
+  "enchanted_outlines.config.save": "Save",
+  "enchanted_outlines.config.cancel": "Cancel"
+}

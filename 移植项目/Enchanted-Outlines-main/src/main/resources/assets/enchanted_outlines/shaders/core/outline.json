@@ -1,14 +1,6 @@
 {
     "vertex": "enchanted_outlines:outline",
     "fragment": "enchanted_outlines:outline",
-    "attributes": [
-        "Position",
-        "Color",
-        "UV0",
-        "UV1",
-        "UV2",
-        "Normal"
-    ],
     "samplers": [
         {
             "name": "Sampler0"
