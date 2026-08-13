@@ -118,6 +118,21 @@
 - **配置界面语言键必须同步**:`EnchantedConfigScreen` 新增任何行(addBooleanRow/
   addDoubleRow/... 的 key)都必须同步补 `zh_cn.json`/`en_us.json` 的
   `enchanted_outlines.config.<key>` 与 `<key>.tooltip`,否则界面显示原始键名。
+- **手持物品描边注入点铁律(v0.1.7+,违反即描边不跟随 Better Combat/PlayerAnimator
+  动画)**:玩家手持(第一/第三人称)描边<b>必须</b>在 `ItemInHandRenderer.renderItem`
+  (7 参)HEAD 渲染(`ItemInHandRendererMixin`),<b>禁止</b>移回 `ItemRenderer.render`
+  (8 参)HEAD —— 攻击动画变换由 PlayerAnimator 在 `renderItem` 调用<b>之前</b>应用到
+  PoseStack(ItemInHandLayer 手部变换之后),8 参 render 的 HEAD 拿不到动画变换,
+  描边会留在原版静态位置。`ItemInHandRendererMixin` 用 ThreadLocal 标记
+  `IN_ITEM_IN_HAND_RENDERER`(HEAD 设 true / RETURN 恢复),`ItemRendererMixin` 玩家
+  手持分支检查标记跳过(避免"静态描边 + 动画描边"重复);GROUND/FIXED 不经
+  ItemInHandRenderer,仍由 `ItemRendererMixin` 处理。模型解析 seed 必须与本体
+  `renderStatic` 一致(`entity.getId() + context.ordinal()`)。
+- **渲染缓存必须随进出世界/资源重载清理(v0.1.7+,违反即多人"退出后重进渲染错误")**:
+  新增缓存必须登记到 `OutlineRenderer.invalidateCaches()`(统一清空 shapeTextures /
+  lumaCache / RenderType 缓存 / shieldModel / tridentModel / 几何缓存);资源重载
+  (`setOutlineShader`)与进出世界(`LevelEvent.Load` / `ClientPlayerNetworkEvent.LoggingOut`,
+  挂 `NeoForge.EVENT_BUS` 游戏总线)都会调用它。禁止新增"永不清理"的实例缓存。
 - 原则:本体怎么渲染,描边就怎么渲染 —— 一切自定义渲染(模型替换/纹理替换)必须
   走与本体相同的 hook/解析路径,不得硬编码原版假设。
 

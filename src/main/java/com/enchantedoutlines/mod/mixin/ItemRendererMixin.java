@@ -62,6 +62,19 @@ public abstract class ItemRendererMixin {
                 && context != ItemDisplayContext.FIXED) {
             return;
         }
+        // ⚠️ 玩家手持(第一/第三人称)物品:若当前由 ItemInHandRenderer.renderItem 驱动
+        // (ItemInHandLayer 玩家手持层 / 原版第一人称 renderHandsWithItems),描边已在
+        // ItemInHandRendererMixin HEAD 渲染 —— 该注入点 pose 已含 Better Combat/
+        // PlayerAnimator 的攻击动画变换,描边与本体 100% 同步(issue #2)。此处跳过,
+        // 避免"静态位置描边 + 动画位置描边"重复。GROUND/FIXED 不经 ItemInHandRenderer,
+        // 仍由本方法处理。
+        if (context.firstPerson()
+                || context == ItemDisplayContext.THIRD_PERSON_LEFT_HAND
+                || context == ItemDisplayContext.THIRD_PERSON_RIGHT_HAND) {
+            if (OutlineRenderer.isInItemInHandRenderer()) {
+                return;
+            }
+        }
         int color = ColorResolver.resolve(stack);
         if (color == -1) {
             return;

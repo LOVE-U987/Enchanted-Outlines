@@ -6,6 +6,7 @@
   "client": [
     "GuiGraphicsMixin",
     "HumanoidArmorLayerMixin",
+    "ItemInHandRendererMixin",
     "ItemRendererMixin",
     "ThrownTridentRendererMixin",
     "ElytraModelAccessor",

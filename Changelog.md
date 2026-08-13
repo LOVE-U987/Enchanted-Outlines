@@ -2,6 +2,52 @@
 
 ---
 
+## v0.1.7 (2026-08-12)
+
+### 修复: 手持描边跟随 Better Combat 战斗动画(issue #2)
+
+- 问题: 使用 Better Combat(含 Punchy)时,攻击动画期间附魔描边<b>不跟随武器的
+  挥砍动画</b>——描边停留在原版静态位置,与动画中的武器本体分离。
+- 根因: Better Combat 用 PlayerAnimator 驱动攻击动画,玩家手持物品的本体渲染
+  经过 `ItemInHandLayer.renderArmWithItem` → `ItemInHandRenderer.renderItem`,
+  攻击动画变换(scale/translate/rotate)由 PlayerAnimator 在 `renderItem` 调用
+  <b>之前</b>应用到 PoseStack。旧描边在 `ItemRenderer.render`(8 参)HEAD 注入,
+  当 PlayerAnimator 版本/路径差异(第一人称 THIRD_PERSON_MODEL 模式:取消原版
+  第一人称、改由玩家实体 + PlayerItemInHandLayer 渲染)时,描边看到的 pose 与
+  本体不一致 → 留在静态位置。
+- 修复: 新增 `ItemInHandRendererMixin`,把<b>玩家手持描边提前到
+  `ItemInHandRenderer.renderItem` HEAD</b>——该注入点 pose 与本体完全一致
+  (已含 Better Combat 动画变换),描边先画垫底、本体随后覆盖中心,与本体
+  100% 同步;同时用静态标记让 `ItemRendererMixin` 跳过同一物品在 8 参 render
+  HEAD 的重复描边(避免"静态描边 + 动画描边"同时出现)。
+- 覆盖范围: 第一人称(原版 ItemInHandRenderer 与 PlayerAnimator
+  PlayerItemInHandLayer 都汇聚到此)与第三人称(ItemInHandLayer);掉落物/展示框
+  (GROUND/FIXED)不经 ItemInHandRenderer,仍由 ItemRendererMixin 处理。
+- 影响文件:
+  - `src/main/java/com/enchantedoutlines/mod/mixin/ItemInHandRendererMixin.java`(新增)
+  - `src/main/java/com/enchantedoutlines/mod/mixin/ItemRendererMixin.java`
+  - `src/main/resources/enchanted_outlines.mixins.json`
+
+### 修复: 多人游戏退出后重进渲染严重错误(issue #1)
+
+- 问题: 加入服务器第一次渲染正常,退出客户端/服务器后重进渲染严重错误;
+  需每次进客户端先进一次单人世界才恢复。
+- 根因: 渲染缓存未随"资源重载/进出世界"清理——进入服务器(尤其带服务器
+  资源包)会触发资源重载,TextureManager 销毁全部动态纹理,但 `worldOutlineRenderTypes`
+  /`armorRenderTypes` 等 RenderType 缓存与 `shieldModel`/`tridentModel` 近似模型
+  缓存<b>从不清理</b> → 旧缓存引用已失效资源 → 描边渲染成错误状态。进单人
+  世界恰好触发 RegisterShadersEvent 清理部分缓存才"恢复"。
+- 修复:
+  - `OutlineRenderer` 新增统一入口 `invalidateCaches()`,清空全部缓存
+    (形状纹理/亮度/RenderType/近似模型/几何缓存);
+  - `setOutlineShader`(资源重载回调)改用 `invalidateCaches()`;
+  - `EnchantedOutlinesClient` 监听 NeoForge `LevelEvent.Load`(进世界)与
+    `ClientPlayerNetworkEvent.LoggingOut`(离开服务器),进出世界时也清空缓存,
+    覆盖"无资源包服务器直连不触发资源重载"的场景。
+- 影响文件:
+  - `src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java`
+  - `src/main/java/com/enchantedoutlines/mod/EnchantedOutlinesClient.java`
+
 ## v0.1.6 (2026-08-09)
 
 ### 修复: 灾变武器描边兼容性(映射表 + 预变换分类)

@@ -96,6 +96,41 @@ public final class OutlineRenderer {
 
     public static final OutlineRenderer INSTANCE = new OutlineRenderer();
 
+    /**
+     * 当前是否处于 {@code ItemInHandRenderer.renderItem} 渲染上下文的标记。
+     * <p>
+     * 玩家手持物品描边由 {@code ItemInHandRendererMixin} 在
+     * {@code ItemInHandRenderer.renderItem} HEAD 渲染(该 pose 已含 Better Combat/
+     * PlayerAnimator 攻击动画变换,描边与本体同步);{@code ItemRendererMixin} 的
+     * 8 参 render HEAD 玩家手持分支据此跳过,避免"静态描边 + 动画描边"重复。
+     * <p>
+     * 放在本普通类而非 mixin 类:Mixin 会把非私有方法尝试合并进目标类,public
+     * static 工具方法会抛 InvalidMixinException(2026-08-13 崩溃:
+     * "contains non-private static method")。
+     */
+    private static final ThreadLocal<Boolean> IN_ITEM_IN_HAND_RENDERER =
+            ThreadLocal.withInitial(() -> Boolean.FALSE);
+
+    /**
+     * 设置/清除 {@code ItemInHandRenderer.renderItem} 上下文标记(HEAD 设 true、
+     * RETURN 设 false;渲染线程单线程,ThreadLocal 仅为严谨)。
+     *
+     * @param in true = 进入 ItemInHandRenderer 渲染(描边已由该层处理)
+     */
+    public static void markItemInHandRender(boolean in) {
+        IN_ITEM_IN_HAND_RENDERER.set(in);
+    }
+
+    /**
+     * 查询当前是否处于 {@code ItemInHandRenderer.renderItem} 渲染上下文。
+     *
+     * @return true = 玩家手持物品描边已由 {@code ItemInHandRendererMixin} 处理,
+     *         调用方应跳过
+     */
+    public static boolean isInItemInHandRenderer() {
+        return IN_ITEM_IN_HAND_RENDERER.get();
+    }
+
     /** 全亮光照(GUI 物品标准光照)。 */
     private static final int FULL_BRIGHT = 0xF000F0;
 
@@ -376,9 +411,38 @@ public final class OutlineRenderer {
         this.outlineAlphaBoostUniform = shader != null ? shader.getUniform("OutlineAlphaBoost") : null;
         this.outlineCutoutUniform = shader != null ? shader.getUniform("OutlineCutout") : null;
         // 资源重载(F3+T 触发 RegisterShadersEvent)时,TextureManager 已销毁全部注册纹理,
-        // "描边色形状纹理"缓存与"贴图亮度"缓存一并失效 → 清空以便按需重建。
+        // 全部缓存(形状纹理/亮度/RenderType/近似模型)一并失效 → 清空以便按需重建
+        // (AGENTS.md #7:缓存不随资源重载清理会导致"退出服务器重进渲染错误"等脏状态)。
+        invalidateCaches();
+    }
+
+    /**
+     * 清空全部渲染缓存,供<b>资源重载</b>与<b>加入/离开世界</b>时调用。
+     * <p>
+     * 多人游戏"退出后重进渲染严重错误"(issue #1)根因:进入服务器下载/应用资源包会触发
+     * 资源重载,TextureManager 销毁全部动态纹理,而本渲染器的 RenderType 缓存
+     * ({@link #worldOutlineRenderTypes}/{@link #armorRenderTypes} 等)与近似模型缓存
+     * ({@link #shieldModel}/{@link #tridentModel})从不清理 → 旧缓存引用已失效的资源,
+     * 描边渲染成 missing 纹理/错误状态;进单人世界恰好触发 RegisterShadersEvent 清理
+     * 一部分缓存才"恢复"。修复:统一入口,资源重载与进出世界都清空。
+     * <ul>
+     *   <li>形状纹理/亮度缓存:纹理文件变更后重算;</li>
+     *   <li>RenderType 缓存:纹理位置可能指向已销毁的动态纹理,重建引用新纹理;</li>
+     *   <li>盾牌/三叉戟近似模型:持有旧 transforms/旧 atlas sprite 引用,重建。</li>
+     * </ul>
+     */
+    public void invalidateCaches() {
         this.shapeTextures.clear();
         this.lumaCache.clear();
+        this.worldOutlineRenderTypes.clear();
+        this.armorRenderTypes.clear();
+        this.outlineRenderType = null;
+        this.handOutlineRenderType = null;
+        this.shieldModel = null;
+        this.shieldTransforms = null;
+        this.tridentModel = null;
+        this.tridentTransforms = null;
+        this.modelGeometryCache.clear();
     }
 
     /**
