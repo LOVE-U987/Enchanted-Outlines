@@ -65,6 +65,21 @@ public abstract class HumanoidArmorLayerMixin {
         if (thickness <= 0f) {
             return;
         }
+        // ⚠️ AzureLib 盔甲:本体走 AzArmorRenderer 的 AzBone 骨骼(不走 HumanoidModel
+        // 的 ModelPart),纹理也不在 ArmorMaterial.Layer 标准路径。必须走 Geo 骨骼
+        // 描边,否则 renderArmorOutline 遍历 AzArmorModel 的原版 ModelPart → 画成
+        // 原版盔甲轮廓,与本体错位。
+        if (OutlineRenderer.INSTANCE.isAzureLibArmor(stack)) {
+            // HEAD 注入发生在方法体 copyPropertiesTo 之前,armorModel 仍是默认姿势;
+            // 先复制姿势,否则 renderAzureLibArmorOutline 里反射调用的 applyBaseTransformations
+            // 读到 head/body 默认旋转,描边与本体错位。
+            @SuppressWarnings({"rawtypes", "unchecked"})
+            HumanoidModel parent = (HumanoidModel) ((HumanoidArmorLayer<?, ?, ?>) (Object) this).getParentModel();
+            parent.copyPropertiesTo(armorModel);
+            OutlineRenderer.INSTANCE.renderAzureLibArmorOutline(
+                    pose, stack, entity, slot, color, thickness, armorModel);
+            return;
+        }
         ArmorMaterial material = armorItem.getMaterial().value();
         var layers = material.layers();
         if (layers.isEmpty()) {
