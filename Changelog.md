@@ -2,6 +2,29 @@
 
 ---
 
+## v0.1.8 (2026-08-16)
+
+### 新增: 物品黑白名单支持 `minecraft:*` 命名空间通配符
+
+- 新增白名单配置 `enabledItems`(TOML 键,配置界面「颜色」分类新增一行):
+  - 逗号分隔的物品 id,只有列表内的物品才会描边;为空 = 全部物品(默认,行为不变);
+  - 支持通配符:如 `minecraft:*` 匹配 minecraft 命名空间下所有物品、`minecraft:di*`
+    匹配路径以 `di` 开头的物品;不含 `*` 的条目按精确 id 匹配(向后兼容)。
+- 黑名单 `disabledItems` 升级:同样支持 `minecraft:*` / `minecraft:di*` 通配符,
+  原精确 id 语义不变。
+- 过滤顺序:白名单在前(不在白名单直接不描边),黑名单在后(白名单放行的再被黑名单
+  剔除);程序化注册的禁用/取色(`OutlineColorRegistry`)优先级不变。
+- 接入点:`ColorResolver.resolve` / `resolveFoilOnly`(所有描边入口——GUI/手持/盔甲/
+  鞘翅/投掷物——都汇聚于此),新实现按 `*` 通配符编译正则缓存,热路径零重复编译。
+- 影响文件:
+  - `src/main/java/com/enchantedoutlines/mod/config/Config.java`(`enabledItems` 配置项、
+    `isItemEnabled`、黑/白名单通配符解析)
+  - `src/main/java/com/enchantedoutlines/mod/outline/ColorResolver.java`
+  - `src/main/java/com/enchantedoutlines/mod/config/EnchantedConfigScreen.java`
+  - `src/main/resources/assets/enchanted_outlines/lang/zh_cn.json` / `en_us.json`
+
+---
+
 ## v0.1.7 (2026-08-12)
 
 ### 修复: 手持描边跟随 Better Combat 战斗动画(issue #2)

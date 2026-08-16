@@ -16,6 +16,7 @@ import net.minecraft.world.item.enchantment.ItemEnchantments;
  * <p>
  * 解析优先级:
  * <ol>
+ *   <li>物品不在白名单(配置,支持 {@code minecraft:*} 通配符)→ 不描边(-1)</li>
  *   <li>物品被禁用(程序化或配置)→ 不描边(-1)</li>
  *   <li>物品固定颜色(程序化 &gt; 配置)→ 使用该色</li>
  *   <li>附魔取色(程序化 &gt; 配置;mergeMode 决定 highest/first)→ 使用该色</li>
@@ -42,7 +43,8 @@ public final class ColorResolver {
 
         ResourceLocation itemId = itemId(stack);
         if (itemId != null) {
-            if (OutlineColorRegistry.isItemDisabled(itemId) || Config.isItemDisabled(itemId)) {
+            if (!Config.isItemEnabled(itemId)
+                    || OutlineColorRegistry.isItemDisabled(itemId) || Config.isItemDisabled(itemId)) {
                 return -1;
             }
             Integer itemColor = OutlineColorRegistry.itemColor(itemId);
@@ -92,7 +94,8 @@ public final class ColorResolver {
     public static int resolveFoilOnly(ItemStack stack) {
         ResourceLocation itemId = itemId(stack);
         if (itemId != null) {
-            if (OutlineColorRegistry.isItemDisabled(itemId) || Config.isItemDisabled(itemId)) {
+            if (!Config.isItemEnabled(itemId)
+                    || OutlineColorRegistry.isItemDisabled(itemId) || Config.isItemDisabled(itemId)) {
                 return -1;
             }
             Integer itemColor = OutlineColorRegistry.itemColor(itemId);

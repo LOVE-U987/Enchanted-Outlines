@@ -111,6 +111,7 @@ public class EnchantedConfigScreen extends Screen {
             y = addColorRow(y, "defaultColor", Config.DEFAULT_COLOR, widgetX);
             y = addLongTextRow(y, "enchantColors", Config.ENCHANT_COLORS, widgetX);
             y = addLongTextRow(y, "itemColors", Config.ITEM_COLORS, widgetX);
+            y = addLongTextRow(y, "enabledItems", Config.ENABLED_ITEMS, widgetX);
             y = addLongTextRow(y, "disabledItems", Config.DISABLED_ITEMS, widgetX);
         }
 

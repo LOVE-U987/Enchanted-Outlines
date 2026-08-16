@@ -1,9 +1,10 @@
 package com.enchantedoutlines.mod.config;
 
+import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
-import java.util.Set;
+import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
 
@@ -192,10 +193,25 @@ public final class Config {
                     "逐物品描边颜色:itemid=RRGGBB,逗号分隔;覆盖该物品的附魔取色(含模组物品)。")
             .define("itemColors", "");
 
-    /** 永不描边的物品 id */
+    /**
+     * 白名单:只对列表内的物品描边(默认空 = 全部物品)。
+     * <p>
+     * 支持 {@code namespace:*} 通配符:如 {@code minecraft:*} 匹配 minecraft
+     * 命名空间下所有物品;也支持路径前缀通配如 {@code minecraft:di*}。
+     * 黑名单({@link #DISABLED_ITEMS})在白名单之后过滤。
+     */
+    public static final ModConfigSpec.ConfigValue<String> ENABLED_ITEMS = BUILDER
+            .comment("Comma separated item ids that may get an outline; empty = all items.",
+                    "白名单:逗号分隔的物品 id,只有列表内的物品才会描边;为空 = 全部物品(默认)。",
+                    "支持通配符:'minecraft:*' 匹配 minecraft 命名空间下所有物品,如 'minecraft:di*' 匹配以 di 开头的物品。",
+                    "黑名单(disabledItems)在白名单之后过滤。")
+            .define("enabledItems", "");
+
+    /** 永不描边的物品 id(支持 minecraft:* 通配符) */
     public static final ModConfigSpec.ConfigValue<String> DISABLED_ITEMS = BUILDER
-            .comment("Comma separated item ids that never get an outline.",
-                    "永不描边的物品 id,逗号分隔。")
+            .comment("Comma separated item ids that never get an outline; supports 'minecraft:*' wildcards.",
+                    "永不描边的物品 id,逗号分隔;支持通配符:如 'minecraft:*' 禁用整个 minecraft 命名空间,",
+                    "'minecraft:di*' 禁用路径以 di 开头的物品。")
             .define("disabledItems", "");
 
     public static final ModConfigSpec SPEC = BUILDER.build();
@@ -221,7 +237,8 @@ public final class Config {
     private static volatile Integer cachedDefaultColor = null;
     private static volatile Map<ResourceLocation, Integer> cachedEnchantColors = null;
     private static volatile Map<ResourceLocation, Integer> cachedItemColors = null;
-    private static volatile Set<ResourceLocation> cachedDisabledItems = null;
+    private static volatile List<Pattern> cachedEnabledPatterns = null;
+    private static volatile List<Pattern> cachedDisabledPatterns = null;
 
     private Config() {
     }
@@ -231,7 +248,8 @@ public final class Config {
         cachedDefaultColor = null;
         cachedEnchantColors = null;
         cachedItemColors = null;
-        cachedDisabledItems = null;
+        cachedEnabledPatterns = null;
+        cachedDisabledPatterns = null;
     }
 
     /** 默认描边色(ARGB,完全不透明)。非法值时退回青绿色。 */
@@ -270,14 +288,29 @@ public final class Config {
         return itemColorMap().get(item);
     }
 
-    /** 物品是否被配置禁用描边。 */
-    public static boolean isItemDisabled(ResourceLocation item) {
-        Set<ResourceLocation> set = cachedDisabledItems;
-        if (set == null) {
-            set = parseIdList(DISABLED_ITEMS.get());
-            cachedDisabledItems = set;
+    /**
+     * 物品是否允许描边(白名单)。
+     * <p>
+     * 白名单为空(默认)= 全部物品允许;非空 = 需匹配任一模式(支持
+     * {@code minecraft:*} 命名空间通配符)。
+     */
+    public static boolean isItemEnabled(ResourceLocation item) {
+        List<Pattern> list = cachedEnabledPatterns;
+        if (list == null) {
+            list = parseIdPatterns(ENABLED_ITEMS.get());
+            cachedEnabledPatterns = list;
         }
-        return set.contains(item);
+        return list.isEmpty() || matchesAny(list, item);
+    }
+
+    /** 物品是否被配置禁用描边(黑名单,支持 minecraft:* 通配符)。 */
+    public static boolean isItemDisabled(ResourceLocation item) {
+        List<Pattern> list = cachedDisabledPatterns;
+        if (list == null) {
+            list = parseIdPatterns(DISABLED_ITEMS.get());
+            cachedDisabledPatterns = list;
+        }
+        return matchesAny(list, item);
     }
 
     public static boolean isHighestMerge() {
@@ -316,23 +349,50 @@ public final class Config {
         return map;
     }
 
-    /** 解析逗号分隔的物品 id 列表。 */
-    private static Set<ResourceLocation> parseIdList(String raw) {
-        Set<ResourceLocation> set = new HashSet<>();
+    /**
+     * 解析逗号分隔的物品 id / 通配符列表为匹配模式。
+     * <p>
+     * 每个条目支持 {@code *} 通配符:{@code minecraft:*} 匹配整个命名空间,
+     * {@code minecraft:di*} 匹配路径前缀;不含 {@code *} 时按精确 id 匹配(向后兼容)。
+     */
+    private static List<Pattern> parseIdPatterns(String raw) {
+        List<Pattern> list = new ArrayList<>();
         if (raw == null) {
-            return set;
+            return list;
         }
         for (String part : raw.split(",")) {
             String seg = part.trim();
             if (seg.isEmpty()) {
                 continue;
             }
-            try {
-                set.add(ResourceLocation.parse(seg));
-            } catch (RuntimeException ignored) {
+            list.add(compilePattern(seg));
+        }
+        return list;
+    }
+
+    /** 把单个 id/通配符条目编译为正则(^...$,* → .*)。 */
+    private static Pattern compilePattern(String seg) {
+        StringBuilder sb = new StringBuilder("^");
+        int start = 0;
+        for (int i = 0; i < seg.length(); i++) {
+            if (seg.charAt(i) == '*') {
+                sb.append(Pattern.quote(seg.substring(start, i))).append(".*");
+                start = i + 1;
             }
         }
-        return set;
+        sb.append(Pattern.quote(seg.substring(start))).append("$");
+        return Pattern.compile(sb.toString());
+    }
+
+    /** 物品 id 是否匹配模式列表中的任意一个。 */
+    private static boolean matchesAny(List<Pattern> patterns, ResourceLocation item) {
+        String s = item.toString();
+        for (Pattern p : patterns) {
+            if (p.matcher(s).matches()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 解析 RRGGBB(容错 # 前缀与 3 位简写)。非法返回 -1。 */

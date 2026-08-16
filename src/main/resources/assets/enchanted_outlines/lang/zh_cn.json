@@ -50,8 +50,11 @@
   "enchanted_outlines.config.itemColors": "逐物品颜色",
   "enchanted_outlines.config.itemColors.tooltip": "逗号分隔的映射:itemid=RRGGBB。覆盖该物品的附魔取色,模组物品 id 直接可用。",
 
+  "enchanted_outlines.config.enabledItems": "白名单(允许描边的物品)",
+  "enchanted_outlines.config.enabledItems.tooltip": "逗号分隔的物品 id,只有列表内的物品才会描边;为空 = 全部物品(默认)。支持通配符:如 minecraft:* 匹配 minecraft 命名空间下所有物品、minecraft:di* 匹配路径以 di 开头的物品。黑名单(禁用物品)在白名单之后过滤。",
+
   "enchanted_outlines.config.disabledItems": "禁用物品",
-  "enchanted_outlines.config.disabledItems.tooltip": "逗号分隔的物品 id 列表,这些物品即使带附魔也不描边。",
+  "enchanted_outlines.config.disabledItems.tooltip": "逗号分隔的物品 id,这些物品即使带附魔也不描边。支持通配符:如 minecraft:* 禁用整个 minecraft 命名空间、minecraft:di* 禁用路径以 di 开头的物品。",
 
   "enchanted_outlines.config.save": "保存",
   "enchanted_outlines.config.cancel": "取消"

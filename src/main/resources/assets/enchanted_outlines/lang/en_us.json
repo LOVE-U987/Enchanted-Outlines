@@ -50,8 +50,11 @@
   "enchanted_outlines.config.itemColors": "Per-Item Colors",
   "enchanted_outlines.config.itemColors.tooltip": "Comma-separated map: itemid=RRGGBB. Overrides the enchantment color for that item; modded item ids work directly.",
 
+  "enchanted_outlines.config.enabledItems": "Allowed Items (Whitelist)",
+  "enchanted_outlines.config.enabledItems.tooltip": "Comma-separated item ids that may get an outline; empty = all items (default). Supports wildcards: minecraft:* matches the whole minecraft namespace, minecraft:di* matches ids starting with di. The blacklist (disabledItems) is applied after the whitelist.",
+
   "enchanted_outlines.config.disabledItems": "Disabled Items",
-  "enchanted_outlines.config.disabledItems.tooltip": "Comma-separated item ids that never get an outline, even when enchanted.",
+  "enchanted_outlines.config.disabledItems.tooltip": "Comma-separated item ids that never get an outline, even when enchanted. Supports wildcards: minecraft:* disables the whole minecraft namespace.",
 
   "enchanted_outlines.config.save": "Save",
   "enchanted_outlines.config.cancel": "Cancel"
