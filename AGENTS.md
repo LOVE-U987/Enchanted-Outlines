@@ -22,6 +22,48 @@
 - 扁平物品 = 形状纹理(alpha 遮罩);3D 物品 = 几何外扩;盔甲/鞘翅/投掷物 = 逐 cube 放大壳。
 - 这三条路径的**形状来源与几何**保持 v0.1.2 设计,任何优化(缓存/预处理)不得改变其语义。
 
+### 3.5 扁平物品描边必须用形状纹理(精灵相对 UV),禁止用模型 UV 采样 BLOCK_SHEET
+- **事故(2026-08-16)**:扁平描边旧实现 `emitQuad` 直接把模型 quad 的 UV 交给着色器采样
+  BLOCK_SHEET。原版扁平物品(剑/工具)烘焙后的 quad UV 是精灵在 atlas 的<b>绝对 UV</b>
+  (模型生成器写入),采样正确 → 剑形轮廓;但<b>模组扁平模型</b>(BEWLR 平面变体/手写模型)
+  的 UV 常是 [0,1] 全图,采样越出精灵区域 → 整块 quad 全不透明 → <b>描边变成平面正方形</b>
+  (不遵循轮廓)。
+- **规则**:扁平物品(GUI/手持)描边一律走 `renderFlatOutlineShape` —— CPU 读贴图 alpha
+  生成形状纹理(`shapeTextureFor`)+ 精灵相对 UV(`emitQuadShape`)渲染,形状由贴图 alpha
+  决定、与模型 UV 无关;颜色恒为纯描边色(不混色),换取任意模组扁平物品轮廓完整。
+  3D 物品(方块/盾牌/三叉戟)仍走几何外扩(`renderVertexNormalExpand`/`renderGui3dInflate`),
+  不受影响。
+- 参考实现:`OutlineRenderer.renderFlatOutlineShape` / `guiOutlineRenderType` / `emitQuadShape`。
+- ⚠️ 删除"模型 UV 采样"路径的兜底:若形状纹理 alpha 读取失败(见铁律 1/5)会回退纯白矩形
+  → 又是正方形;因此修扁平描边前先确认 ImageIO 与 `spriteOriginalImage` 父类链查找未被破坏。
+
+### 3.6 Geo 骨骼物品描边必须采样本体贴图轮廓;只有 3D 盔甲才纯几何
+- **事故(2026-08-16)**:Geo 物品(武器/法杖/工具,GeckoLib/AzureLib)的骨骼几何多为
+  <b>2D 平面 quad</b>(扁平化武器),本体轮廓靠 2D 贴图 alpha。若用纯几何描边
+  (geoOutlineRenderType,采样 WHITE_TEXTURE)会把整块 quad 画成<b>平面正方形</b>。
+- **规则**:Geo <b>物品</b>(`renderGeoModelOutline`)必须采样本体贴图 alpha
+  (`armorOutlineRenderType(texture)`):无光影自定义 shader 采样本体贴图 texel.a 裁轮廓;
+  光影 fallback 混色开 emissive+本体贴图、混色关形状纹理。Geo <b>盔甲</b>
+  (`renderAzureLibArmorOutline`/`renderGeckoLibArmorOutline`)的 UV 是 3D 展开,采样 2D
+  贴图 alpha 形状不匹配 → 保持纯几何(`geoOutlineRenderType`)。
+- 判断原则:物品(平面/半平面几何)→ 采样贴图轮廓;盔甲(真 3D 骨骼)→ 纯几何。
+- 参考实现:`OutlineRenderer.renderGeoModelOutline`(采样贴图)vs
+  `renderAzureLibArmorOutline` / `renderGeckoLibArmorOutline`(纯几何 `geoOutlineRenderType`)。
+- **盔甲内部的扁平 cube 描边:混合双渲染(2026-08-16 补充)**:柠檬神/裁决者盔甲含
+  <b>扁平 cube</b>(某维度尺寸为 0,如 sigil 21×21×0 / spin 32×0×32 / crown 3×3×0 等
+  2D 贴片)。两种单一方案都失败:
+  <ul>
+    <li>纯几何(geoOutlineRenderType):扁平 cube 外扩成<b>平面方形</b>(不遵循贴图轮廓);</li>
+    <li>纯采样贴图(armorOutlineRenderType):模组盔甲贴图<b>大部分透明</b>(柠檬神贴图
+      61372 像素透明 vs 4164 不透明)→ 扁平部件(光环/飘带)采样 alpha≈0 → <b>无描边</b>。</li>
+  </ul>
+  修复(用户选"混合(智能补全)"):`ExpandedGeoCube.flat` 标记扁平 cube;
+  `renderGeoCube` 对扁平 cube <b>先画几何再画采样贴图</b>(双 consumer):
+  几何层保证所有部件可见(透明区域不缺失),采样贴图层在不透明区域贴合贴图轮廓。
+  3D cube 只画几何(避免 3D 展开 UV 采样 2D 贴图形状不匹配)。
+  三个 Geo 路径(`renderGeoModelOutline` / `renderAzureLibArmorOutline` /
+  `renderGeckoLibArmorOutline`)都按此混合。
+
 ## 性能优化纪律
 
 ### 4. 几何缓存不得改变渲染结果

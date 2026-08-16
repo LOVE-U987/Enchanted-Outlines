@@ -34,6 +34,56 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(HumanoidArmorLayer.class)
 public abstract class HumanoidArmorLayerMixin {
 
+    /** render 方法遍历的盔甲槽位顺序(与原版 render 方法一致)。 */
+    private static final EquipmentSlot[] ARMOR_SLOTS =
+            {EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET, EquipmentSlot.HEAD};
+
+    /**
+     * GeckoLib 盔甲描边钩子(render 方法 HEAD)。
+     * <p>
+     * GeckoLib 的 HumanoidArmorLayerMixin 用 {@code @WrapWithCondition} 拦截 render 里的
+     * {@code renderArmorPiece} 调用并 cancel → 12 参 renderArmorPiece HEAD 对 GeckoLib 盔甲
+     * 不触发。GeckoLib 盔甲(如 Iron's Spells GenericCustomArmorRenderer)必须在这里
+     * (render HEAD,本体渲染之前)遍历 4 槽位画描边:baseModel 用 getParentModel()
+     * (setupAnim 后姿势正确),与 GeckoLib 本体用 copyPropertiesTo 得到的 armorModel 姿势一致。
+     */
+    @Inject(method = "render(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILnet/minecraft/world/entity/LivingEntity;FFFFFF)V",
+            at = @At("HEAD"))
+    private void enchantedoutlines$geckoLibArmorOutline(PoseStack pose, MultiBufferSource buffers, int light,
+                                                        LivingEntity entity,
+                                                        float limbSwing, float limbSwingAmount, float partialTick,
+                                                        float ageInTicks, float netHeadYaw, float headPitch,
+                                                        CallbackInfo ci) {
+        if (!Config.ENABLE.get()) {
+            return;
+        }
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        HumanoidModel baseModel = (HumanoidModel) ((HumanoidArmorLayer<?, ?, ?>) (Object) this).getParentModel();
+        for (EquipmentSlot slot : ARMOR_SLOTS) {
+            ItemStack stack = entity.getItemBySlot(slot);
+            if (stack.isEmpty() || !(stack.getItem() instanceof ArmorItem)) {
+                continue;
+            }
+            if (!OutlineRenderer.INSTANCE.isGeckoLibArmor(stack)) {
+                continue;
+            }
+            int color = ColorResolver.resolve(stack);
+            if (color == -1) {
+                continue;
+            }
+            float thickness = ColorResolver.armorThickness(stack);
+            if (thickness <= 0f) {
+                continue;
+            }
+            try {
+                OutlineRenderer.INSTANCE.renderGeckoLibArmorOutline(
+                        pose, stack, entity, slot, color, thickness, baseModel);
+            } catch (Throwable ignored) {
+                // 描边是附加效果,失败不影响本体渲染
+            }
+        }
+    }
+
     /**
      * NeoForge 把 render 改为直接调用 12 参 renderArmorPiece(6 参旧重载已 @Deprecated
      * 且运行时不再被调用)。必须注入 12 参版本,否则永远不会触发:
@@ -63,6 +113,13 @@ public abstract class HumanoidArmorLayerMixin {
         }
         float thickness = ColorResolver.armorThickness(stack);
         if (thickness <= 0f) {
+            return;
+        }
+        // ⚠️ GeckoLib 盔甲:GeckoLib 的 HumanoidArmorLayerMixin(WrapWithCondition on render)
+        // 会拦截 renderArmorPiece 调用并 cancel → 正常情况下本 12 参 HEAD 不会触发;GeckoLib
+        // 盔甲描边由 render 方法 HEAD 注入(enchantedoutlines$geckoLibArmorOutline)处理。这里
+        // 检测并跳过,防止 GeckoLib wrap 未生效等边界情况走原版 renderArmorOutline(错位)。
+        if (OutlineRenderer.INSTANCE.isGeckoLibArmor(stack)) {
             return;
         }
         // ⚠️ AzureLib 盔甲:本体走 AzArmorRenderer 的 AzBone 骨骼(不走 HumanoidModel

@@ -205,7 +205,6 @@ public final class OutlineRenderer {
      */
     private final MultiBufferSource.BufferSource outlineBuffers;
 
-    private RenderType outlineRenderType;
     private RenderType handOutlineRenderType;
     /** 光影兼容世界渲染 RenderType 缓存(内置 emissive shader,按纹理区分:BLOCK_SHEET 与白色/独立纹理)。 */
     private final Map<ResourceLocation, RenderType> worldOutlineRenderTypes = new HashMap<>();
@@ -216,6 +215,9 @@ public final class OutlineRenderer {
     /** 生成 tridentModel 时使用的 transforms(in_hand 与 throwing 不同,需跟踪重建)。 */
     private ItemTransforms tridentTransforms;
     private final Map<ResourceLocation, RenderType> armorRenderTypes = new HashMap<>();
+
+    /** GUI/手持扁平描边的"形状纹理"RenderType 缓存(按纹理 location)。 */
+    private final Map<ResourceLocation, RenderType> guiShapeRenderTypes = new HashMap<>();
 
     /**
      * "描边色形状纹理"缓存:扁平物品在光影兼容下关闭混色时,为每个 (物品贴图, 描边色)
@@ -439,7 +441,7 @@ public final class OutlineRenderer {
         this.lumaCache.clear();
         this.worldOutlineRenderTypes.clear();
         this.armorRenderTypes.clear();
-        this.outlineRenderType = null;
+        this.guiShapeRenderTypes.clear();
         this.handOutlineRenderType = null;
         this.shieldModel = null;
         this.shieldTransforms = null;
@@ -450,6 +452,7 @@ public final class OutlineRenderer {
         this.geoItemModelCache.clear();
         this.geoItemKindCache.clear();
         this.azureLibArmorCache.clear();
+        this.geckoLibArmorCache.clear();
     }
 
     /**
@@ -529,33 +532,17 @@ public final class OutlineRenderer {
             renderGui3dInflate(pose, geo, x, y, z, model, shellConsumer, packedColor, thickness);
         } else {
             // 扁平物品:8 方向屏幕偏移(各方向整体平移,屏幕像素语义)。
-            // 基础矩阵链(scale + display transform + 居中)与方向无关 → 只应用一次,
-            // 每个方向仅做一次平移,避免 8 次重复矩阵乘法。
-            VertexConsumer consumer = outlineBuffers.getBuffer(outlineRenderType());
+            // 基础矩阵链(scale + display transform + 居中)与方向无关 → 只应用一次。
+            // ⚠️ 用形状纹理路径(renderFlatOutlineShape),不依赖模型 UV 采样 BLOCK_SHEET
+            // —— 模组扁平模型 UV 常为 [0,1] 全图,旧 emitQuad 采样越界 → 平面正方形
+            // (2026-08-16 事故,见 renderFlatOutlineShape 注释)。
             pose.pushPose();
             try {
                 pose.translate(x + 8, y + 8, z);
                 pose.scale(16.0F, -16.0F, 16.0F);
                 model.getTransforms().getTransform(ItemDisplayContext.GUI).apply(false, pose);
                 pose.translate(-0.5F, -0.5F, -0.5F);
-                // 屏幕偏移 thickness×0.5px 在 scale(16) 之后 → 模型空间偏移 = 像素/16
-                float t = thickness * THICKNESS_SCALE / 16.0f;
-                List<BakedQuad> geoQuads = geo.quads;
-                List<Vec3i> geoNormals = geo.expandNormals;
-                Vector3f tmp = new Vector3f(); // 复用,避免每顶点分配
-                for (float[] off : OFFSETS) {
-                    pose.pushPose();
-                    try {
-                        pose.translate(off[0] * t, off[1] * t, 0.0f);
-                        Matrix4f poseMatrix = pose.last().pose();
-                        for (int qi = 0; qi < geoQuads.size(); qi++) {
-                            emitQuad(geoQuads.get(qi), geoNormals.get(qi), poseMatrix,
-                                    consumer, packedColor, tmp);
-                        }
-                    } finally {
-                        pose.popPose();
-                    }
-                }
+                renderFlatOutlineShape(geo, pose, color, thickness);
             } finally {
                 pose.popPose();
             }
@@ -810,7 +797,7 @@ public final class OutlineRenderer {
         // 3D=顶点法线外扩、盔甲/鞘翅/投掷物=逐 cube 放大壳,保持 v0.1.2 语义。
         boolean fallback = needVanillaShaderFallback();
         if (fallback && !model.isGui3d() && !Config.ITEM_PIXEL_COLOR_GLINT.get()) {
-            renderFlatPureColorShape(geo, pose, packedColor, thickness);
+            renderFlatOutlineShape(geo, pose, color, thickness);
             outlineBuffers.endBatch();
             return;
         }
@@ -845,26 +832,10 @@ public final class OutlineRenderer {
             // 细长物品(三叉戟 pole)两端对称延伸,不再"向一端偏移"。
             renderVertexNormalExpand(geo, pose, consumer, packedColor, offset);
         } else {
-            // 扁平物品(剑/工具等):整体平面内 8 方向平移,UV 不变 → 剑形轮廓
-            // 均匀外扩、边缘贴合。移动顶点会拉伸 UV → 外扩量 = (scale-1)×到中心
-            // 距离,剑身中部离中心近、外扩少,剑头离中心远、外扩多 → 轮廓裂开。
-            // 整体平移则每个方向外扩量恒定,与 GUI 扁平物品的屏幕偏移同思路。
-            float t = thickness * THICKNESS_SCALE / 16.0f;
-            List<BakedQuad> geoQuads = geo.quads;
-            List<Vec3i> geoNormals = geo.expandNormals;
-            Vector3f tmp = new Vector3f(); // 复用,避免每顶点分配
-            for (float[] off : OFFSETS) {
-                pose.pushPose();
-                try {
-                    pose.translate(off[0] * t, off[1] * t, 0.0f);
-                    Matrix4f m = pose.last().pose();
-                    for (int qi = 0; qi < geoQuads.size(); qi++) {
-                        emitQuad(geoQuads.get(qi), geoNormals.get(qi), m, consumer, packedColor, tmp);
-                    }
-                } finally {
-                    pose.popPose();
-                }
-            }
+            // 扁平物品(剑/工具等):8 方向平移 + 形状纹理(不依赖模型 UV)。
+            // ⚠️ 旧实现 emitQuad + 模型 UV 采样 BLOCK_SHEET,模组扁平模型 UV 常为 [0,1]
+            // 全图 → 采样越界 → 平面正方形(2026-08-16 事故,见 renderFlatOutlineShape)。
+            renderFlatOutlineShape(geo, pose, color, thickness);
         }
         outlineBuffers.endBatch();
     }
@@ -1133,67 +1104,42 @@ public final class OutlineRenderer {
     }
 
     /**
-     * 单个 quad:顶点经 pose 矩阵变换到 GUI 像素空间,以纯描边色写入。
-     * 顶点数据布局(i 步进 8):x, y, z / 打包颜色 / u, v / 未用。
-     * 法线取 quad 方向(GUI 下着色器不使用,仅补全格式)。
+     * 扁平物品(GUI/手持)描边统一入口:8 方向平移 + <b>形状纹理</b>(CPU 读贴图 alpha),
+     * <b>不依赖模型 UV 采样 BLOCK_SHEET</b>。
+     * <p>
+     * ⚠️ <b>为什么必须用形状纹理而不是模型 UV(2026-08-16 事故):</b>扁平描边旧实现用
+     * {@link #emitQuad} 直接把<b>模型 UV</b> 交给着色器采样 BLOCK_SHEET。原版扁平物品
+     * (剑/工具)烘焙后的 quad UV 是精灵在 atlas 的<b>绝对 UV</b>(模型生成器写入),
+     * 采样正确 → 剑形轮廓;但<b>模组扁平模型</b>的 UV 常是 [0,1] 全图(或自定义值),
+     * 采样 BLOCK_SHEET 越出精灵区域 → 整块 quad 全不透明 → <b>描边变成平面正方形</b>。
+     * 修复:一律改走 {@link #shapeTextureFor} 形状纹理(alpha=贴图 alpha)+
+     * {@link #emitQuadShape}(精灵相对 UV 0..1)渲染,形状完全由贴图 alpha 决定,
+     * 与模型 UV 无关 → 任意模组扁平物品都遵循轮廓。
+     * <ul>
+     *   <li>无光影:自定义描边 shader + 形状纹理({@link #guiOutlineRenderType});</li>
+     *   <li>光影 fallback:内置 emissive + 形状纹理({@link #worldEmissiveOutlineRenderType})。</li>
+     * </ul>
+     * 颜色恒为<b>纯描边色</b>(形状纹理 RGB 已烘焙),不再与物品贴图混色 —— 这是摆脱
+     * 模型 UV 依赖的必然代价,换取任意模组扁平物品轮廓完整。
      *
-     * @param quad        要输出的 quad
-     * @param normal      该 quad 的法线(已由 {@link ModelGeometry} 缓存,避免每方向重复计算)
-     * @param poseMatrix  顶点变换矩阵
-     * @param consumer    顶点写入目标
-     * @param packedColor 描边色(ABGR 打包)
-     * @param tmp         复用的矩阵变换结果缓冲
-     */
-    private static void emitQuad(BakedQuad quad, Vec3i normal, Matrix4f poseMatrix,
-                                 VertexConsumer consumer, int packedColor, Vector3f tmp) {
-        int[] vertices = quad.getVertices();
-        for (int i = 0; i + 8 <= vertices.length; i += 8) {
-            float x = Float.intBitsToFloat(vertices[i]);
-            float y = Float.intBitsToFloat(vertices[i + 1]);
-            float z = Float.intBitsToFloat(vertices[i + 2]);
-            float u = Float.intBitsToFloat(vertices[i + 4]);
-            float v = Float.intBitsToFloat(vertices[i + 5]);
-            Vector3f p = poseMatrix.transformPosition(x, y, z, tmp);
-            consumer.addVertex(p.x(), p.y(), p.z(), packedColor, u, v,
-                    OverlayTexture.NO_OVERLAY, FULL_BRIGHT,
-                    normal.getX(), normal.getY(), normal.getZ());
-        }
-    }
-
-    /**
-     * 扁平物品"纯描边色 + 保留物品形状"渲染(光影兼容下关闭混色)。
-     * <p>
-     * 内置 emissive fsh 是 {@code texel × vertexColor},单纹理采样无法分离"形状(alpha)"
-     * 与"颜色(RGB)"。解法:CPU 读取物品贴图原图(NativeImage,内存像素非 GPU 回读),
-     * 生成一张 RGB=描边色、A=原 alpha 的"描边色形状纹理"(见
-     * {@link #shapeTextureFor(TextureAtlasSprite, int)}),再按 8 方向平移渲染 →
-     * 输出 = 纯描边色 × 贴图 alpha = 纯色物品轮廓,形状与开启混色时一致。
-     * <p>
-     * 顶点 UV 需从 atlas 绝对坐标重映射为 sprite 相对坐标(独立纹理 0..1)。
-     * 顶点颜色传白色(描边色已烘焙进纹理)。
-     * <p>
-     * ⚠️ 本路径是扁平物品"统一轮廓"形状的来源(AGENTS.md #3):形状完全取决于
-     * {@link #shapeTextureFor} 生成的形状纹理(alpha 遮罩)。若纹理回退纯白矩形
-     * (读不到 alpha),描边会变成正方形 —— 修改前先检查 {@link #shapeTextureForLocation}
-     * 的 ImageIO 铁律与 {@link #spriteOriginalImage} 的父类链查找未被破坏。
-     *
-     * @param quads     收集到的模型 quads
-     * @param pose      已居中(translate(-0.5))的 PoseStack
-     * @param color     ARGB 描边色
+     * @param geo      已收集的模型几何(bySprite / 法线 / quad 索引缓存)
+     * @param pose     已居中(translate(-0.5))且已应用 GUI/display 变换的 PoseStack
+     * @param color    ARGB 描边色
      * @param thickness 描边厚度(像素语义)
      */
-    private void renderFlatPureColorShape(ModelGeometry geo, PoseStack pose, int color, float thickness) {
+    private void renderFlatOutlineShape(ModelGeometry geo, PoseStack pose, int color, float thickness) {
         float t = thickness * THICKNESS_SCALE / 16.0f;
-        // 按 sprite 分组(已随模型缓存):同一贴图的 quad 共用一张形状纹理(同一 RenderType 一次绑定)。
-        // 法线与 quad 索引也随模型缓存,帧内按索引取,不做 indexOf 搜索。
         Map<TextureAtlasSprite, List<BakedQuad>> bySprite = geo.bySprite;
         Map<TextureAtlasSprite, int[]> spriteQuadIndices = geo.spriteQuadIndices;
         List<Vec3i> geoNormals = geo.expandNormals;
-        Vector3f tmp = new Vector3f(); // 复用,避免每顶点分配
+        Vector3f tmp = new Vector3f();
         for (Map.Entry<TextureAtlasSprite, List<BakedQuad>> entry : bySprite.entrySet()) {
             TextureAtlasSprite sprite = entry.getKey();
             ResourceLocation tex = shapeTextureFor(sprite, color);
-            VertexConsumer consumer = outlineBuffers.getBuffer(worldEmissiveOutlineRenderType(tex));
+            RenderType rt = needVanillaShaderFallback()
+                    ? worldEmissiveOutlineRenderType(tex)
+                    : guiOutlineRenderType(tex);
+            VertexConsumer consumer = outlineBuffers.getBuffer(rt);
             List<BakedQuad> spriteQuads = entry.getValue();
             int[] quadIndices = spriteQuadIndices.get(sprite);
             for (float[] off : OFFSETS) {
@@ -1210,6 +1156,29 @@ public final class OutlineRenderer {
                 }
             }
         }
+    }
+
+    /**
+     * GUI/手持扁平描边的"形状纹理" RenderType:自定义描边 shader + 指定形状纹理。
+     * 无光影时用(有光影时走内置 emissive 的 {@link #worldEmissiveOutlineRenderType})。
+     */
+    private RenderType guiOutlineRenderType(ResourceLocation tex) {
+        RenderType type = this.guiShapeRenderTypes.get(tex);
+        if (type == null) {
+            type = RenderType.create("enchanted_outlines_gui_shape",
+                    DefaultVertexFormat.NEW_ENTITY, VertexFormat.Mode.QUADS, 1024, false, false,
+                    RenderType.CompositeState.builder()
+                            .setShaderState(new RenderStateShard.ShaderStateShard(() -> this.outlineShader))
+                            .setTextureState(new RenderStateShard.TextureStateShard(tex, false, false))
+                            .setTransparencyState(RenderStateShard.TRANSLUCENT_TRANSPARENCY)
+                            .setCullState(RenderStateShard.NO_CULL)
+                            .setDepthTestState(RenderStateShard.LEQUAL_DEPTH_TEST)
+                            .setWriteMaskState(RenderStateShard.COLOR_WRITE)
+                            .setLightmapState(RenderStateShard.NO_LIGHTMAP)
+                            .createCompositeState(false));
+            this.guiShapeRenderTypes.put(tex, type);
+        }
+        return type;
     }
 
     /**
@@ -1421,37 +1390,6 @@ public final class OutlineRenderer {
                     OverlayTexture.NO_OVERLAY, FULL_BRIGHT,
                     normal.getX(), normal.getY(), normal.getZ());
         }
-    }
-
-    /**
-     * 自定义 RenderType:alpha 遮罩纯色描边着色器 + 物品图集 + 半透明 + 与 GUI 一致的深度。
-     * 着色器状态用 {@link java.util.function.Supplier} 引用 → 资源重载后自动使用新实例,
-     * 无需重建 RenderType。
-     * <p>
-     * <b>只写颜色不写深度</b>(COLOR_WRITE):描边画的是整张 16×16 平面 quad,而 GL 深度写入
-     * 与 alpha 无关——即使描边着色器输出 alpha=0 的透明像素(物品贴图透明区域),深度仍会
-     * 写入。原版附魔光效(glint)用 EQUAL_DEPTH_TEST 只在<b>本体写入深度</b>的像素上显示;
-     * 描边把物品周围的格子背景区域深度也写掉后,glint 会在整个槽位通过深度测试 →
-     * 出现"格子大小的原版附魔光效闪动"。本体随后绘制(LEQUAL,相等通过)覆盖中心并重写
-     * 本体区域深度,描边无需也不应写深度。与 GUI 3D 路径(handOutlineRenderType)一致。
-     */
-    private RenderType outlineRenderType() {
-        RenderType type = this.outlineRenderType;
-        if (type == null) {
-            type = RenderType.create("enchanted_outlines_outline",
-                    DefaultVertexFormat.NEW_ENTITY, VertexFormat.Mode.QUADS, 1024, false, false,
-                    RenderType.CompositeState.builder()
-                            .setShaderState(new RenderStateShard.ShaderStateShard(() -> this.outlineShader))
-                            .setTextureState(RenderStateShard.BLOCK_SHEET)
-                            .setTransparencyState(RenderStateShard.TRANSLUCENT_TRANSPARENCY)
-                            .setCullState(RenderStateShard.NO_CULL)
-                            .setDepthTestState(RenderStateShard.LEQUAL_DEPTH_TEST)
-                            .setWriteMaskState(RenderStateShard.COLOR_WRITE)
-                            .setLightmapState(RenderStateShard.NO_LIGHTMAP)
-                            .createCompositeState(false));
-            this.outlineRenderType = type;
-        }
-        return type;
     }
 
     /**
@@ -2889,6 +2827,41 @@ public final class OutlineRenderer {
         return type;
     }
 
+    /**
+     * Geo 骨骼模型(GeckoLib / AzureLib 物品与盔甲)的<b>纯几何描边</b> RenderType。
+     * <p>
+     * ⚠️ 3D 骨骼模型<b>不能</b>用 2D 贴图 alpha 遮罩做描边形状:模组 3D 模型贴图常带
+     * 透明/镂空区域、内部面、特殊 UV(如 2D 精灵图展开在 3D 方块上),采样其 alpha 会让
+     * 描边缺块/半透明。因此 Geo 骨骼描边<b>恒为纯描边色、形状纯几何</b>(逐 cube 顶点
+     * 法线外扩),采样 WHITE_TEXTURE(alpha 全 1),无视 ARMOR_PIXEL_COLOR_GLINT 混色开关。
+     * <ul>
+     *   <li>无光影(自定义 shader):WHITE_TEXTURE + 描边 shader,vertexColor=纯描边色;</li>
+     *   <li>光影 fallback:烘焙 WHITE_TEXTURE 的"描边色形状纹理"(全 alpha 纯色)+ emissive。</li>
+     * </ul>
+     */
+    private RenderType geoOutlineRenderType(int color) {
+        if (needVanillaShaderFallback()) {
+            ResourceLocation shapeTex = shapeTextureForLocation(WHITE_TEXTURE, color);
+            return worldEmissiveOutlineRenderType(shapeTex);
+        }
+        RenderType type = this.armorRenderTypes.get(WHITE_TEXTURE);
+        if (type == null) {
+            type = RenderType.create("enchanted_outlines_geo",
+                    DefaultVertexFormat.NEW_ENTITY, VertexFormat.Mode.QUADS, 1024, false, false,
+                    RenderType.CompositeState.builder()
+                            .setShaderState(new RenderStateShard.ShaderStateShard(() -> this.outlineShader))
+                            .setTextureState(new RenderStateShard.TextureStateShard(WHITE_TEXTURE, false, false))
+                            .setTransparencyState(RenderStateShard.TRANSLUCENT_TRANSPARENCY)
+                            .setCullState(RenderStateShard.NO_CULL)
+                            .setDepthTestState(RenderStateShard.LEQUAL_DEPTH_TEST)
+                            .setWriteMaskState(RenderStateShard.COLOR_WRITE)
+                            .setLightmapState(RenderStateShard.NO_LIGHTMAP)
+                            .createCompositeState(false));
+            this.armorRenderTypes.put(WHITE_TEXTURE, type);
+        }
+        return type;
+    }
+
     // ==================== GeckoLib / AzureLib Geo 骨骼描边 ====================
     //
     // GeckoLib 4 与 AzureLib(其 fork)的物品/盔甲用同一套 Geo 骨骼结构:
@@ -2911,6 +2884,9 @@ public final class OutlineRenderer {
 
     /** 物品 → 是否 AzureLib 盔甲(检测结果缓存,热路径避免每帧反射)。 */
     private final Map<Item, Boolean> azureLibArmorCache = new HashMap<>();
+
+    /** 物品 → 是否 GeckoLib 盔甲(GeoRenderProvider.getGeoArmorRenderer 非空,检测结果缓存)。 */
+    private final Map<Item, Boolean> geckoLibArmorCache = new HashMap<>();
 
     /** Geo 反射 Method 缓存(key = className#name#paramTypes,静态,类加载后不变)。 */
     private static final Map<String, Method> GEO_METHOD_CACHE = new HashMap<>();
@@ -3179,7 +3155,11 @@ public final class OutlineRenderer {
         return drawn;
     }
 
-    /** 渲染单个 Geo cube:cube 变换链 pivot/16 → rotate → -pivot/16,顶点沿聚合顶点法线外扩。 */
+    /**
+     * 渲染单个 Geo cube:cube 变换链 pivot/16 → rotate → -pivot/16,顶点沿聚合顶点法线外扩,
+     * <b>统一采样贴图</b>(纹理轮廓)—— 贴图有内容的部件描边(剑形/符号轮廓),
+     * 贴图全透明的部件(如光环)无描边。3D cube 采样贴图,UV 是模型 UV。
+     */
     private boolean renderGeoCube(PoseStack pose, Object cube, VertexConsumer consumer, int packedColor,
                                   float offset) {
         ExpandedGeoCube ec = geoCubeCache.get(cube);
@@ -3204,21 +3184,27 @@ public final class OutlineRenderer {
             }
             pose.translate(-px, -py, -pz);
 
-            Matrix4f poseMatrix = pose.last().pose();
-            Vector3f tmp = new Vector3f();
-            for (int i = 0; i < ExpandedGeoCube.QUAD_VERTICES; i++) {
-                Vector3f p = poseMatrix.transformPosition(
-                        ec.x[i] + ec.nx[i] * offset,
-                        ec.y[i] + ec.ny[i] * offset,
-                        ec.z[i] + ec.nz[i] * offset, tmp);
-                consumer.addVertex(p.x(), p.y(), p.z(), packedColor,
-                        ec.u[i], ec.v[i], OverlayTexture.NO_OVERLAY, FULL_BRIGHT,
-                        ec.nx[i], ec.ny[i], ec.nz[i]);
-            }
+            writeGeoVertices(pose, ec, consumer, packedColor, offset);
         } finally {
             pose.popPose();
         }
         return true;
+    }
+
+    /** 写 Geo cube 的 24 个外扩顶点到 consumer(顶点法线外扩 / 采样贴图共用)。 */
+    private static void writeGeoVertices(PoseStack pose, ExpandedGeoCube ec, VertexConsumer consumer,
+                                         int packedColor, float offset) {
+        Matrix4f poseMatrix = pose.last().pose();
+        Vector3f tmp = new Vector3f();
+        for (int i = 0; i < ExpandedGeoCube.QUAD_VERTICES; i++) {
+            Vector3f p = poseMatrix.transformPosition(
+                    ec.x[i] + ec.nx[i] * offset,
+                    ec.y[i] + ec.ny[i] * offset,
+                    ec.z[i] + ec.nz[i] * offset, tmp);
+            consumer.addVertex(p.x(), p.y(), p.z(), packedColor,
+                    ec.u[i], ec.v[i], OverlayTexture.NO_OVERLAY, FULL_BRIGHT,
+                    ec.nx[i], ec.ny[i], ec.nz[i]);
+        }
     }
 
     /**
@@ -3236,6 +3222,12 @@ public final class OutlineRenderer {
         setOutlineAlphaBoost(2.0f);
         int packedColor = 0xFF000000 | (color & 0xFFFFFF);
         float offset = thickness * THICKNESS_SCALE * inflatePerThick;
+        // ⚠️ Geo 物品(武器/法杖/工具)采样本体贴图 alpha 做形状 —— 这些物品几何多为
+        // 2D 平面 quad(扁平化武器),纯几何描边(geoOutlineRenderType)会画成平面正方形,
+        // 不遵循贴图轮廓。用 armorOutlineRenderType(本体纹理)让形状由贴图 alpha 决定:
+        //   - 无光影:自定义 shader 采样本体贴图,texel.a 裁出轮廓;
+        //   - 光影 fallback + 混色开:emissive + 本体贴图;混色关:形状纹理(CPU 读 alpha)。
+        // ⚠️ 物品(武器/法杖)以 2D 贴图轮廓为主:统一采样贴图(剑形轮廓)。
         VertexConsumer consumer = outlineBuffers.getBuffer(armorOutlineRenderType(texture, color));
         int drawn = 0;
         pose.pushPose();
@@ -3460,10 +3452,6 @@ public final class OutlineRenderer {
         if (model == null) {
             return false;
         }
-        ResourceLocation texture = azureLibArmorTexture(renderer, entity, stack);
-        if (texture == null) {
-            texture = WHITE_TEXTURE;
-        }
         // 反射调用原模组骨骼准备(姿势对齐 + 按槽位可见性),精确复刻本体
         if (!azureLibArmorPrepare(renderer, model, baseModel, slot)) {
             return false;
@@ -3475,6 +3463,12 @@ public final class OutlineRenderer {
         setOutlineAlphaBoost(2.0f);
         int packedColor = 0xFF000000 | (color & 0xFFFFFF);
         float offset = thickness * THICKNESS_SCALE * ARMOR_INFLATE_PER_THICKNESS;
+        // ⚠️ 纯采样贴图(2026-08-16):全部 cube 采样本体纹理(纹理轮廓),贴图有内容的
+        // 部件描边(sigil 符号等),贴图全透明的部件(光环)无描边。
+        ResourceLocation texture = azureLibArmorTexture(renderer, entity, stack);
+        if (texture == null) {
+            texture = WHITE_TEXTURE;
+        }
         VertexConsumer consumer = outlineBuffers.getBuffer(armorOutlineRenderType(texture, color));
         int drawn = 0;
         pose.pushPose();
@@ -3495,6 +3489,36 @@ public final class OutlineRenderer {
         }
         outlineBuffers.endBatch();
         return true;
+    }
+
+    /** 拿 AzureLib 盔甲纹理(renderer.rendererPipeline().config().textureLocation(entity, stack))。 */
+    private ResourceLocation azureLibArmorTexture(Object renderer, LivingEntity entity, ItemStack stack) {
+        try {
+            Method pipelineM = geoMethod(renderer.getClass(), "rendererPipeline");
+            if (pipelineM == null) {
+                return null;
+            }
+            Object pipeline = pipelineM.invoke(renderer);
+            if (pipeline == null) {
+                return null;
+            }
+            Method configM = geoMethod(pipeline.getClass(), "config");
+            if (configM == null) {
+                return null;
+            }
+            Object config = configM.invoke(pipeline);
+            if (config == null) {
+                return null;
+            }
+            Method textureM = geoMethod(config.getClass(), "textureLocation", Object.class, Object.class);
+            if (textureM == null) {
+                return null;
+            }
+            Object texture = textureM.invoke(config, entity, stack);
+            return texture instanceof ResourceLocation tex ? tex : null;
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     /** 拿 AzureLib 盔甲渲染器(AzArmorRendererRegistry.getOrNull(stack))。 */
@@ -3532,36 +3556,6 @@ public final class OutlineRenderer {
         }
     }
 
-    /** 拿 AzureLib 盔甲纹理(renderer.rendererPipeline().config().textureLocation(entity, stack))。 */
-    private ResourceLocation azureLibArmorTexture(Object renderer, LivingEntity entity, ItemStack stack) {
-        try {
-            Method pipelineM = geoMethod(renderer.getClass(), "rendererPipeline");
-            if (pipelineM == null) {
-                return null;
-            }
-            Object pipeline = pipelineM.invoke(renderer);
-            if (pipeline == null) {
-                return null;
-            }
-            Method configM = geoMethod(pipeline.getClass(), "config");
-            if (configM == null) {
-                return null;
-            }
-            Object config = configM.invoke(pipeline);
-            if (config == null) {
-                return null;
-            }
-            Method textureM = geoMethod(config.getClass(), "textureLocation", Object.class, Object.class);
-            if (textureM == null) {
-                return null;
-            }
-            Object texture = textureM.invoke(config, entity, stack);
-            return texture instanceof ResourceLocation tex ? tex : null;
-        } catch (Exception ignored) {
-            return null;
-        }
-    }
-
     /**
      * 反射调用原模组骨骼准备:grabRelevantBones(抓骨骼)+ applyBaseTransformations(姿势对齐)
      * + applyBoneVisibilityBySlot(按槽位可见性)。这比硬编码复刻更精确,且兼容模组自定义的
@@ -3592,6 +3586,148 @@ public final class OutlineRenderer {
             return true;
         } catch (Exception ignored) {
             return false;
+        }
+    }
+
+    // ---- GeckoLib 盔甲 ----
+
+    /** 检测是否 GeckoLib 盔甲(GeoRenderProvider.getGeoArmorRenderer 非空,结果按 Item 缓存)。 */
+    public boolean isGeckoLibArmor(ItemStack stack) {
+        Item item = stack.getItem();
+        Boolean cached = geckoLibArmorCache.get(item);
+        if (cached != null) {
+            return cached;
+        }
+        boolean result;
+        try {
+            result = geckoLibArmorRenderer(stack, null, null, null) != null;
+        } catch (Exception ignored) {
+            result = false;
+        }
+        geckoLibArmorCache.put(item, result);
+        return result;
+    }
+
+    /**
+     * 拿 GeckoLib 盔甲渲染器(GeoRenderProvider.of(item).getGeoArmorRenderer(...))。
+     * <p>
+     * GeckoLib 盔甲(GeoArmorRenderer,如 Iron's Spells 的 GenericCustomArmorRenderer)通过
+     * GeoItem.createGeoRenderer 注册的匿名 GeoRenderProvider 暴露,不经过 IClientItemExtensions。
+     */
+    private Object geckoLibArmorRenderer(ItemStack stack, LivingEntity entity, EquipmentSlot slot,
+                                         HumanoidModel<?> baseModel) {
+        try {
+            Class<?> providerClass = Class.forName("software.bernie.geckolib.animatable.client.GeoRenderProvider");
+            Method of = geoMethod(providerClass, "of", Item.class);
+            if (of == null) {
+                return null;
+            }
+            Object provider = of.invoke(null, stack.getItem());
+            if (provider == null) {
+                return null;
+            }
+            // getGeoArmorRenderer 是泛型接口方法,匿名类 override;遍历找同名 public 方法
+            Method getRenderer = null;
+            for (Method m : provider.getClass().getMethods()) {
+                if (m.getName().equals("getGeoArmorRenderer")) {
+                    getRenderer = m;
+                    break;
+                }
+            }
+            if (getRenderer == null) {
+                return null;
+            }
+            getRenderer.setAccessible(true);
+            return getRenderer.invoke(provider, entity, stack, slot, baseModel);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    /**
+     * GeckoLib 盔甲描边:拿到 GeoArmorRenderer 的模型后,反射调用其骨骼准备
+     * (grabRelevantBones + applyBaseTransformations + applyBoneVisibilityBySlot),再复刻
+     * actuallyRender 的全局变换 translate(0, 24/16, 0) + scale(-1,-1,1),逐 cube 顶点法线
+     * 外扩渲染。
+     * <p>
+     * ⚠️ 渲染时机:GeckoLib 的 HumanoidArmorLayerMixin 用 WrapWithCondition 拦截 render 里的
+     * renderArmorPiece 调用并 cancel → 我们的 12 参 renderArmorPiece HEAD 不触发。本方法由
+     * {@code HumanoidArmorLayerMixin} 在 render 方法 HEAD 遍历 4 槽位时调用。
+     */
+    public boolean renderGeckoLibArmorOutline(PoseStack pose, ItemStack stack, LivingEntity entity,
+                                              EquipmentSlot slot, int color, float thickness,
+                                              HumanoidModel<?> baseModel) {
+        if (thickness <= 0f || this.outlineShader == null) {
+            return false;
+        }
+        Object renderer = geckoLibArmorRenderer(stack, entity, slot, baseModel);
+        if (renderer == null) {
+            return false;
+        }
+        Object geoModel = geoInvoke(renderer, "getGeoModel");
+        if (geoModel == null) {
+            return false;
+        }
+        Method getModelResource = geoMethod(geoModel.getClass(), "getModelResource", Object.class);
+        Object loc = getModelResource != null ? geoInvokeSafe(getModelResource, geoModel, stack.getItem()) : null;
+        if (!(loc instanceof ResourceLocation mrl)) {
+            return false;
+        }
+        Method getTextureResource = geoMethod(geoModel.getClass(), "getTextureResource", Object.class);
+        Object tex = getTextureResource != null ? geoInvokeSafe(getTextureResource, geoModel, stack.getItem()) : null;
+        if (!(tex instanceof ResourceLocation texture)) {
+            return false;
+        }
+        Method getBakedModel = geoMethod(geoModel.getClass(), "getBakedModel", ResourceLocation.class);
+        Object baked = getBakedModel != null ? geoInvokeSafe(getBakedModel, geoModel, mrl) : null;
+        if (baked == null) {
+            return false;
+        }
+        Object bonesObj = geoInvoke(baked, "topLevelBones");
+        if (!(bonesObj instanceof List<?> bones) || bones.isEmpty()) {
+            return false;
+        }
+        // 骨骼准备:反射 renderer 的 grabRelevantBones/applyBaseTransformations/applyBoneVisibilityBySlot
+        // (protected,geoMethod 已 setAccessible),精确复刻 GeckoLib 本体渲染前的骨骼状态
+        try {
+            geoInvokeArg(renderer, "grabRelevantBones", baked);
+            geoInvokeArg(renderer, "applyBaseTransformations", baseModel);
+            geoInvokeArg(renderer, "applyBoneVisibilityBySlot", slot);
+        } catch (Exception ignored) {
+            return false;
+        }
+        setOutlineAlphaBoost(2.0f);
+        int packedColor = 0xFF000000 | (color & 0xFFFFFF);
+        float offset = thickness * THICKNESS_SCALE * ARMOR_INFLATE_PER_THICKNESS;
+        // ⚠️ 纯采样贴图(2026-08-16):全部 cube 采样本体纹理(纹理轮廓),贴图透明部件无描边
+        VertexConsumer consumer = outlineBuffers.getBuffer(armorOutlineRenderType(texture, color));
+        int drawn = 0;
+        pose.pushPose();
+        try {
+            // 复刻 GeoArmorRenderer.actuallyRender 的全局变换(上下翻转根因)
+            pose.translate(0f, 24f / 16f, 0f);
+            pose.scale(-1f, -1f, 1f);
+            // checkHidden=true:尊重 applyBoneVisibilityBySlot 设置的骨骼 hidden 标志
+            for (Object bone : bones) {
+                drawn += renderGeoBone(pose, bone, consumer, packedColor, offset, true);
+            }
+        } finally {
+            pose.popPose();
+        }
+        if (drawn <= 0) {
+            return false;
+        }
+        outlineBuffers.endBatch();
+        return true;
+    }
+
+    /** 反射调用已解析的 Method(带 setAccessible)。 */
+    private static Object geoInvokeSafe(Method m, Object target, Object... args) {
+        try {
+            m.setAccessible(true);
+            return m.invoke(target, args);
+        } catch (Exception ignored) {
+            return null;
         }
     }
 }
