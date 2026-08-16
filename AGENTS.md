@@ -37,32 +37,23 @@
 - ⚠️ 删除"模型 UV 采样"路径的兜底:若形状纹理 alpha 读取失败(见铁律 1/5)会回退纯白矩形
   → 又是正方形;因此修扁平描边前先确认 ImageIO 与 `spriteOriginalImage` 父类链查找未被破坏。
 
-### 3.6 Geo 骨骼物品描边必须采样本体贴图轮廓;只有 3D 盔甲才纯几何
-- **事故(2026-08-16)**:Geo 物品(武器/法杖/工具,GeckoLib/AzureLib)的骨骼几何多为
-  <b>2D 平面 quad</b>(扁平化武器),本体轮廓靠 2D 贴图 alpha。若用纯几何描边
-  (geoOutlineRenderType,采样 WHITE_TEXTURE)会把整块 quad 画成<b>平面正方形</b>。
-- **规则**:Geo <b>物品</b>(`renderGeoModelOutline`)必须采样本体贴图 alpha
-  (`armorOutlineRenderType(texture)`):无光影自定义 shader 采样本体贴图 texel.a 裁轮廓;
-  光影 fallback 混色开 emissive+本体贴图、混色关形状纹理。Geo <b>盔甲</b>
-  (`renderAzureLibArmorOutline`/`renderGeckoLibArmorOutline`)的 UV 是 3D 展开,采样 2D
-  贴图 alpha 形状不匹配 → 保持纯几何(`geoOutlineRenderType`)。
-- 判断原则:物品(平面/半平面几何)→ 采样贴图轮廓;盔甲(真 3D 骨骼)→ 纯几何。
-- 参考实现:`OutlineRenderer.renderGeoModelOutline`(采样贴图)vs
-  `renderAzureLibArmorOutline` / `renderGeckoLibArmorOutline`(纯几何 `geoOutlineRenderType`)。
-- **盔甲内部的扁平 cube 描边:混合双渲染(2026-08-16 补充)**:柠檬神/裁决者盔甲含
-  <b>扁平 cube</b>(某维度尺寸为 0,如 sigil 21×21×0 / spin 32×0×32 / crown 3×3×0 等
-  2D 贴片)。两种单一方案都失败:
-  <ul>
-    <li>纯几何(geoOutlineRenderType):扁平 cube 外扩成<b>平面方形</b>(不遵循贴图轮廓);</li>
-    <li>纯采样贴图(armorOutlineRenderType):模组盔甲贴图<b>大部分透明</b>(柠檬神贴图
-      61372 像素透明 vs 4164 不透明)→ 扁平部件(光环/飘带)采样 alpha≈0 → <b>无描边</b>。</li>
-  </ul>
-  修复(用户选"混合(智能补全)"):`ExpandedGeoCube.flat` 标记扁平 cube;
-  `renderGeoCube` 对扁平 cube <b>先画几何再画采样贴图</b>(双 consumer):
-  几何层保证所有部件可见(透明区域不缺失),采样贴图层在不透明区域贴合贴图轮廓。
-  3D cube 只画几何(避免 3D 展开 UV 采样 2D 贴图形状不匹配)。
-  三个 Geo 路径(`renderGeoModelOutline` / `renderAzureLibArmorOutline` /
-  `renderGeckoLibArmorOutline`)都按此混合。
+### 3.6 Geo 骨骼描边统一采样本体贴图轮廓;贴图透明部件无描边
+- **事故与方案演进(2026-08-16)**:Geo 物品(武器/法杖)与盔甲(GeckoLib/AzureLib 骨骼)
+  的描边形状经历了多次试错:
+  <ol>
+    <li>纯几何(`geoOutlineRenderType`):扁平 cube(某维度 0 的 2D 贴片)外扩成<b>平面方形</b>;</li>
+    <li>采样贴图:模组贴图<b>大部分透明</b>(柠檬神贴图 61372 透明 vs 4164 不透明)
+      → 扁平部件(光环)无描边;</li>
+    <li>混合双渲染(几何层 + 贴图层叠加):几何层把 cube 填成实心方形,<b>破坏轮廓</b>;</li>
+    <li>几何边框线(只描边主平面 4 条边):显示模型几何轮廓,<b>不贴合纹理</b>;</li>
+    <li><b>最终:纯采样贴图</b>(`armorOutlineRenderType(texture)`)——所有 cube 采样本体
+      贴图 alpha 做形状:贴图有内容的部件描边(剑形/符号/盔甲主体),贴图全透明的部件
+      (如柠檬神光环 spin,贴图区域 0/1024 像素不透明)无描边。</li>
+  </ol>
+- **规则**:Geo 物品与盔甲统一 `armorOutlineRenderType(texture, color)` 采样贴图轮廓,
+  不再用纯几何/边框线/混合双渲染。贴图透明区域无描边是贴图本身的限制,接受。
+- 参考实现:`OutlineRenderer.renderGeoModelOutline` / `renderAzureLibArmorOutline` /
+  `renderGeckoLibArmorOutline` 全部用 `armorOutlineRenderType`。
 
 ## 性能优化纪律
 
