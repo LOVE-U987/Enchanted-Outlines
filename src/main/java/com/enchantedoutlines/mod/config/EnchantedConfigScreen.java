@@ -67,6 +67,9 @@ public class EnchantedConfigScreen extends Screen {
     private float savedFlash = 0f;
     private long openTime;
 
+    // 分类键：general → colors → advanced → experimental
+    private static final String[] CATEGORIES = {"general", "colors", "advanced", "experimental"};
+
     public EnchantedConfigScreen(Screen parent) {
         super(Component.translatable(PREFIX + ".title"));
         this.parent = parent;
@@ -90,29 +93,37 @@ public class EnchantedConfigScreen extends Screen {
         int panelTop = HEADER_HEIGHT;
         int widgetX = this.width - PADDING - WIDGET_WIDTH;
 
-        // 分类导航（侧边栏）
+        // 分类导航（侧边栏）- 按功能分组
         addCategoryButton(0, "general");
         addCategoryButton(1, "colors");
+        addCategoryButton(2, "advanced");
+        addCategoryButton(3, "experimental");
 
         // 内容行
         int y = panelTop + 12;
-        if (selectedCategory == 0) {
+        if (selectedCategory == 0) { // general
             y = addBooleanRow(y, "enable", Config.ENABLE, widgetX);
             y = addDoubleRow(y, "thickness", Config.THICKNESS, 0.0, 8.0, widgetX);
-            y = addDoubleRow(y, "armorThickness", Config.ARMOR_THICKNESS, 0.0, 8.0, widgetX);
+            y = addDoubleRow(y, "armorThickness", Config.ARMOR_THICKNESS, 0.0, 20.0, widgetX);
             y = addBooleanRow(y, "itemPixelColorGlint", Config.ITEM_PIXEL_COLOR_GLINT, widgetX);
             y = addBooleanRow(y, "armorPixelColorGlint", Config.ARMOR_PIXEL_COLOR_GLINT, widgetX);
             y = addBooleanRow(y, "armorUniformExpand", Config.ARMOR_UNIFORM_EXPAND, widgetX);
             y = addBooleanRow(y, "outlineExposureReduce", Config.OUTLINE_EXPOSURE_REDUCE, widgetX);
-            y = addDoubleRow(y, "bewlr3dScale", Config.BEWLR_3D_SCALE, 0.05, 1.0, widgetX);
-            y = addBooleanRow(y, "bewlr3dPerCube", Config.BEWLR_3D_PER_CUBE, widgetX);
-            y = addMergeModeRow(y, widgetX);
-        } else {
+        } else if (selectedCategory == 1) { // colors
             y = addColorRow(y, "defaultColor", Config.DEFAULT_COLOR, widgetX);
             y = addLongTextRow(y, "enchantColors", Config.ENCHANT_COLORS, widgetX);
             y = addLongTextRow(y, "itemColors", Config.ITEM_COLORS, widgetX);
             y = addLongTextRow(y, "enabledItems", Config.ENABLED_ITEMS, widgetX);
             y = addLongTextRow(y, "disabledItems", Config.DISABLED_ITEMS, widgetX);
+        } else if (selectedCategory == 2) { // advanced
+            y = addDoubleRow(y, "bewlr3dScale", Config.BEWLR_3D_SCALE, 0.05, 1.0, widgetX);
+            y = addBooleanRow(y, "bewlr3dPerCube", Config.BEWLR_3D_PER_CUBE, widgetX);
+            y = addBooleanRow(y, "enableTaczCompat", Config.ENABLE_TACZ_COMPAT, widgetX);
+            y = addMergeModeRow(y, widgetX);
+        } else { // experimental
+            y = addBooleanRow(y, "enableRPGRainbow", Config.ENABLE_RPG_RAINBOW, widgetX);
+            y = addBooleanRow(y, "enableDataPackColors", Config.ENABLE_DATAPACK_COLORS, widgetX);
+            y = addBooleanRow(y, "optimizeConfigUi", Config.OPTIMIZE_CONFIG_UI, widgetX);
         }
 
         // 底部完成按钮
