@@ -2,11 +2,14 @@ package com.enchantedoutlines.mod.api.algo;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
-import net.minecraft.client.renderer.block.model.BakedModel;
+import net.minecraft.client.renderer.GameRenderer;
+import net.minecraft.client.renderer.LightTexture;
+import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Vec3i;
+import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -101,6 +104,8 @@ public record ShapeResult(
                                 int color, float offset) {
         pose.pushPose();
         try {
+            float[] matrix = new float[16];
+            pose.last().pose().get(matrix);
             for (int qi = 0; qi < quads.size(); qi++) {
                 Vec3i n = quadNormals.get(qi);
                 for (ExpandVertex v : expandVertices.get(qi)) {
@@ -110,10 +115,11 @@ public record ShapeResult(
                     float ez = v.z() + v.nz() * offset;
                     
                     consumer.addVertex(
-                            pose.last().pose()[0][0] * ex + pose.last().pose()[0][1] * ey + pose.last().pose()[0][2] * ez,
-                            pose.last().pose()[1][0] * ex + pose.last().pose()[1][1] * ey + pose.last().pose()[1][2] * ez,
-                            pose.last().pose()[2][0] * ex + pose.last().pose()[2][1] * ey + pose.last().pose()[2][2] * ez,
-                            color, v.u(), v.v()
+                            matrix[0] * ex + matrix[1] * ey + matrix[2] * ez,
+                            matrix[4] * ex + matrix[5] * ey + matrix[6] * ez,
+                            matrix[8] * ex + matrix[9] * ey + matrix[10] * ez,
+                            color, v.u(), v.v(),
+                            LightTexture.FULL_BRIGHT, LightTexture.FULL_BRIGHT, v.nx(), v.ny(), v.nz()
                     );
                 }
             }
@@ -127,6 +133,8 @@ public record ShapeResult(
                             int color, float thickness) {
         // 简化处理：实际应完整实现 quad 渲染
         int[] vertices = quad.getVertices();
+        float[] matrix = new float[16];
+        pose.last().pose().get(matrix);
         for (int i = 0; i < vertices.length; i += 8) {
             float x = Float.intBitsToFloat(vertices[i]);
             float y = Float.intBitsToFloat(vertices[i + 1]);
@@ -135,10 +143,11 @@ public record ShapeResult(
             float v = Float.intBitsToFloat(vertices[i + 5]);
             
             consumer.addVertex(
-                    pose.last().pose()[0][0] * x + pose.last().pose()[0][1] * y + pose.last().pose()[0][2] * z,
-                    pose.last().pose()[1][0] * x + pose.last().pose()[1][1] * y + pose.last().pose()[1][2] * z,
-                    pose.last().pose()[2][0] * x + pose.last().pose()[2][1] * y + pose.last().pose()[2][2] * z,
-                    color, u, v
+                    matrix[0] * x + matrix[1] * y + matrix[2] * z,
+                    matrix[4] * x + matrix[5] * y + matrix[6] * z,
+                    matrix[8] * x + matrix[9] * y + matrix[10] * z,
+                    color, u, v,
+                    LightTexture.FULL_BRIGHT, LightTexture.FULL_BRIGHT, 0f, 0f, 0f
             );
         }
     }

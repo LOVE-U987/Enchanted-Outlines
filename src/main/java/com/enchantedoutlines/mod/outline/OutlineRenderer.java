@@ -245,6 +245,13 @@ public final class OutlineRenderer {
     private record ShapeKey(ResourceLocation spriteName, int color, boolean reduceExposure) {
     }
 
+    /** 动画序列精灵缓存键：包含帧索引，避免动画帧切换后仍使用旧帧形状纹理。 */
+    private record AnimatedShapeKey(ResourceLocation spriteName, int frameIndex, int color, boolean reduceExposure) {
+    }
+
+    /** 动画序列形状纹理缓存：key=帧索引 + 颜色，value=形状纹理 location。 */
+    private final Map<AnimatedShapeKey, ResourceLocation> animatedShapeTextures = new HashMap<>();
+
     /** 三叉戟实体纹理(投掷物 ThrownTrident 的模型材质)。 */
     private static final ResourceLocation TRIDENT_ENTITY_TEXTURE =
             ResourceLocation.withDefaultNamespace("textures/entity/trident.png");
@@ -438,6 +445,7 @@ public final class OutlineRenderer {
      */
     public void invalidateCaches() {
         this.shapeTextures.clear();
+        this.animatedShapeTextures.clear();
         this.lumaCache.clear();
         this.worldOutlineRenderTypes.clear();
         this.armorRenderTypes.clear();
@@ -1689,6 +1697,8 @@ public final class OutlineRenderer {
     private static final String[] BEWLR_MODEL_HOLDER_CLASSES = {
             "cn.leolezury.eternalstarlight.common.client.renderer.ESItemStackRenderer", // 永恒星光:scale(1,-1,-1)
             "com.github.L_Ender.cataclysm.client.render.CMItemstackRenderer",            // 灾变:预变换按物品映射表
+            "cn.leolezury.hazennstuff.client.renderer.HSNEnchantedItemStackRenderer",  // Hazen'N Stuff:scale(1,-1,-1)
+            "com.Harbinger.Spore.Client.SItemProperties",  // 真菌感染：孢子:scale(1,-1,-1)
     };
 
     /** 描边时 BEWLR 模型对象 + 来源模组的预变换类别 + 本体纹理(用于颜色混合,可为 null)。 */
@@ -1765,6 +1775,51 @@ public final class OutlineRenderer {
         m.put("coral_bardiche",
                 new CataclysmWeaponSpec("CORAL_BARDICHE_MODEL", "CORAL_BARDICHE_TEXTURE", BewlrModel.CM_FLIP));
         return Map.copyOf(m);
+    }
+
+    /** Hazen'N Stuff 武器<b>精确适配表</b>(基于 Hazen'N Stuff 模组实际字段):
+     * 物品注册 ID → 模型静态字段名。
+     * <p>
+     * Hazen'N Stuff 武器字段名<b>不遵循</b>通用的 {@code <物品 ID 大写>_MODEL} 约定，
+     * 需要显式映射。例如：
+     * <ul>
+     *   <li>{@code wrath_of_the_desert} = {@code WRATH_OF_DESERT_MODEL}(去掉 _THE_);</li>
+     *   <li>{@code wrath_of_the_desert_weapon} = {@code WRATH_OF_DESERT_MODEL};</li>
+     *   <li>{@code wrath_weapon} = {@code WRATH_MODEL}(星怒武器);</li>
+     *   <li>{@code wrath} = {@code WRATH_MODEL}(星怒最简版)。</li>
+     * </ul>
+     */
+    private static final Map<String, String> HAZEN_WEAPON_FIELD_MAP = buildHazenWeaponFieldMap();
+
+    /** 构建 {@link #HAZEN_WEAPON_FIELD_MAP}(Hazen'N Stuff 武器字段映射)。 */
+    private static Map<String, String> buildHazenWeaponFieldMap() {
+        return Map.of(
+            "hazenn:wrath_of_the_desert", "WRATH_OF_DESERT_MODEL",      // 愤怒：荒漠之怒 (去掉 _THE_)
+            "hazenn:wrath_of_the_desert_weapon", "WRATH_OF_DESERT_MODEL", // 愤怒：荒漠之怒 (完整版)
+            "hazenn:wrath_weapon", "WRATH_MODEL",                        // 愤怒：星怒 (简化版)
+            "hazenn:wrath", "WRATH_MODEL"                                // 愤怒：星怒 (最简版)
+        );
+    }
+
+    /**
+     * ⚠️ Spore(真菌感染)BEWLR 武器<b>精确适配表</b>
+     * 物品注册 ID → 模型字段名。Spore 的模型字段名不遵循通用的 {@code <物品 ID 大写>_MODEL}
+     * 约定，需要显式映射。字段命名规则：物品路径的小写形式 + "_MODEL"(无换行/无额外字符)。
+     * <p>
+     * 若字段不匹配，后果：Spore 武器/盔甲<b>描边完全缺失</b>。
+     */
+    private static final Map<String, String> SPORE_WEAPON_FIELD_MAP = buildSporeWeaponFieldMap();
+
+    /** 构建 {@link #SPORE_WEAPON_FIELD_MAP}(Spore 武器字段映射)。 */
+    private static Map<String, String> buildSporeWeaponFieldMap() {
+        return Map.of(
+            // Spore 真菌感染武器 (基于 SItemProperties 静态字段实测)
+            "spore:spore_sword", "SporeSword_MODEL",
+            "spore:spore_spear", "SporeSpear_MODEL",
+            "spore:spore_bow", "SporeBow_MODEL",
+            "spore:coral_sword", "CoralSword_MODEL",
+            "spore:coral_spear", "CoralSpear_MODEL"
+        );
     }
 
     /**
@@ -1854,7 +1909,7 @@ public final class OutlineRenderer {
 
     /** 反射读取 BEWLR 模型 + 来源模组的预变换类别。 */
     private BewlrModel findBewlrModel(ItemStack stack) {
-        String path = BuiltInRegistries.ITEM.getKey(stack.getItem()).getPath();
+        String path = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
         BewlrModel found = readBewlrModelField(path);
         if (found == null) {
             // 永恒星光等模组延迟初始化模型字段:触发一次 BEWLR 渲染使其创建
@@ -1877,11 +1932,41 @@ public final class OutlineRenderer {
      */
     private BewlrModel readBewlrModelField(String itemPath) {
         // 灾变精确映射表(字段名/纹理名/预变换均与 renderByItem 字节码一致)
-        CataclysmWeaponSpec spec = CATACLYSM_WEAPON_SPECS.get(itemPath);
-        String modelField = spec != null ? spec.modelField()
-                : itemPath.toUpperCase(Locale.ROOT).replace('-', '_').replace('.', '_') + "_MODEL";
+        // 跳过 TACZ 物品：TACZ 走 Geo 路径，不应进入 BEWLR 反射逻辑
+        if (itemPath.contains(":tac/") || itemPath.contains(":thearsenalcollection/")) {
+            return null;
+        }
+        // 先查灾变精确映射表
+        CataclysmWeaponSpec cataclysmSpec = CATACLYSM_WEAPON_SPECS.get(itemPath);
+        // 再查 Spore 精确映射表
+        String sporeModelField = SPORE_WEAPON_FIELD_MAP.get(itemPath);
+        // 再查 Hazen 精确映射表
+        String hazenModelField = HAZEN_WEAPON_FIELD_MAP.get(itemPath);
+        
+        String modelField;
+        if (cataclysmSpec != null) {
+            modelField = cataclysmSpec.modelField();
+        } else if (sporeModelField != null) {
+            modelField = sporeModelField;
+        } else if (hazenModelField != null) {
+            modelField = hazenModelField;
+        } else {
+            // 通用约定：物品路径大写 + "_MODEL"
+            modelField = itemPath.toUpperCase(Locale.ROOT).replace('-', '_').replace('.', '_') + "_MODEL";
+        }
         for (String cls : BEWLR_MODEL_HOLDER_CLASSES) {
-            int preTransform = spec != null ? spec.preTransform() : holderPreTransform(cls);
+            int preTransform;
+            if (cataclysmSpec != null) {
+                preTransform = cataclysmSpec.preTransform();
+            } else if (sporeModelField != null) {
+                // Spore: scale(1,-1,-1)
+                preTransform = BewlrModel.ES_FLIP;
+            } else if (cls.startsWith("cn.leolezury.hazennstuff")) {
+                // Hazen'N Stuff: scale(1,-1,-1)
+                preTransform = BewlrModel.ES_FLIP;
+            } else {
+                preTransform = holderPreTransform(cls);
+            }
             try {
                 Class<?> c = Class.forName(cls);
                 Field f = findField(c, modelField);
@@ -1900,10 +1985,10 @@ public final class OutlineRenderer {
                         preTransform = BewlrModel.CM_CENTER_FLIP_TOP;
                     }
                     ResourceLocation tex;
-                    if (spec != null) {
-                        // 灾变:映射表显式指定纹理字段(SOUL_RENDER 等无 _MODEL 后缀,
-                        // 通用 replace 换不出 _TEXTURE,必须显式)
-                        tex = readTextureField(c, spec.textureField());
+                    if (cataclysmSpec != null) {
+                        // 灾变：映射表显式指定纹理字段 (SOUL_RENDER 等无 _MODEL 后缀，
+                        // 通用 replace 换不出 _TEXTURE，必须显式)
+                        tex = readTextureField(c, cataclysmSpec.textureField());
                     } else {
                         // 通用约定:持有类静态 <ID>_TEXTURE,回退模型类 TEXTURE
                         tex = readTextureField(c, modelField.replace("_MODEL", "_TEXTURE"));
@@ -1927,6 +2012,14 @@ public final class OutlineRenderer {
         }
         if (cls.startsWith("com.github.L_Ender.cataclysm")) {
             return BewlrModel.CM_CENTER_FLIP;
+        }
+        if (cls.startsWith("cn.leolezury.hazennstuff")) {
+            // Hazen'N Stuff: scale(1,-1,-1)
+            return BewlrModel.ES_FLIP;
+        }
+        if (cls.startsWith("com.Harbinger.Spore")) {
+            // 真菌感染 (Spore): scale(1,-1,-1)
+            return BewlrModel.ES_FLIP;
         }
         return BewlrModel.NONE;
     }

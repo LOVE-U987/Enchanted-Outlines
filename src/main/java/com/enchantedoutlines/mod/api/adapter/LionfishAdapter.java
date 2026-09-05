@@ -1,5 +1,7 @@
 package com.enchantedoutlines.mod.api.adapter;
 
+import com.mojang.blaze3d.vertex.PoseStack;
+import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.Nullable;
@@ -10,6 +12,8 @@ import org.jetbrains.annotations.Nullable;
  * 处理使用 LionfishAPI 的灾变模组物品。
  */
 public class LionfishAdapter implements ItemModelAdapter {
+
+    public static final LionfishAdapter INSTANCE = new LionfishAdapter();
 
     private static final String LIONFISH_MODEL =
             "com.enderanimator.lionfishapi.model.AdvancedModelBox";
@@ -22,7 +26,7 @@ public class LionfishAdapter implements ItemModelAdapter {
     }
 
     @Override
-    public boolean canHandle(Item item) {
+    public boolean matches(Item item) {
         try {
             // 检查物品是否有 LionfishAPI 的自定义渲染器
             // 通过检查是否有 AdvancedEntityModel 或 AdvancedModelBox 相关字段
@@ -124,5 +128,18 @@ public class LionfishAdapter implements ItemModelAdapter {
      */
     public boolean isPerCubeMode() {
         return com.enchantedoutlines.mod.config.Config.BEWLR_3D_PER_CUBE.get();
+    }
+
+    @Nullable
+    @Override
+    public com.enchantedoutlines.mod.api.core.ItemTypeInfo resolve(net.minecraft.world.item.Item item) {
+        if (!matches(item)) {
+            return null;
+        }
+        
+        // Lionfish 物品的类型信息构建
+        return new com.enchantedoutlines.mod.api.core.ItemTypeInfo(
+            item, false, false, false, true, false, false, null, null, this, null, null, false, false, false
+        );
     }
 }

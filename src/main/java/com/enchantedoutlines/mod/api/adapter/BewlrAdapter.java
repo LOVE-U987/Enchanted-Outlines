@@ -1,13 +1,16 @@
 package com.enchantedoutlines.mod.api.adapter;
 
+import com.enchantedoutlines.mod.api.core.ItemTypeInfo;
 import com.enchantedoutlines.mod.outline.OutlineRenderer;
-import net.minecraft.client.renderer.block.model.BakedModel;
+import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.renderer.block.model.ItemTransforms;
-import net.minecraft.client.resources.model.BakedModelLoader;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.client.resources.model.ModelBaker;
 import net.minecraft.client.resources.model.ModelManager;
 import net.minecraft.client.resources.model.ModelResourceLocation;
-import net.minecraft.client.resources.model.SimpleBakedModel;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.ItemDisplayContext;
@@ -23,6 +26,8 @@ import java.util.function.Function;
  */
 public class BewlrAdapter implements ItemModelAdapter {
 
+    public static final BewlrAdapter INSTANCE = new BewlrAdapter();
+
     private static final String BEWLR_EXTENSION_CLASS =
             "net.neoforged.neoforge.client.extensions.common.IClientItemExtensions";
 
@@ -32,7 +37,7 @@ public class BewlrAdapter implements ItemModelAdapter {
     }
 
     @Override
-    public boolean canHandle(Item item) {
+    public boolean matches(Item item) {
         try {
             // 检查物品是否有 IClientItemExtensions 扩展
             Class<?> extensionClass = Class.forName(BEWLR_EXTENSION_CLASS);
@@ -58,23 +63,24 @@ public class BewlrAdapter implements ItemModelAdapter {
     @Override
     public boolean canHandleGui(ItemStack stack) {
         // 检查是否有 inventory 模型变体
-        return hasInventoryModel(stack) || super.canHandleGui(stack);
+        return hasInventoryModel(stack);
     }
 
     /**
      * 检查物品是否有 inventory 模型变体。
      */
     private boolean hasInventoryModel(ItemStack stack) {
-        String itemId = stack.getItem().getRegistryName().toString();
+        ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
         // 尝试查找 <itemId>_inventory 模型
-        String inventoryModelId = itemId + "#inventory";
+        String inventoryModelId = itemId.toString() + "#inventory";
         
         try {
             ModelManager modelManager = net.minecraft.client.Minecraft.getInstance().getModelManager();
-            ModelResourceLocation modelLocation = new ModelResourceLocation(inventoryModelId, "inventory");
+            ModelResourceLocation modelLocation = new ModelResourceLocation(itemId, "inventory");
             
-            // 模型存在即返回 true
-            return modelManager.hasModel(modelLocation);
+            // NeoForge 20.x: hasModel() 已移除，用 getModel() 判断存在性
+            BakedModel model = modelManager.getModel(modelLocation);
+            return model != null && !model.getClass().getSimpleName().equals("MissingModel");
         } catch (Exception e) {
             return false;
         }
@@ -113,37 +119,21 @@ public class BewlrAdapter implements ItemModelAdapter {
     public BakedModel getCustomModel(ItemStack stack, 
                                       @Nullable net.minecraft.world.level.Level world,
                                       @Nullable net.minecraft.world.entity.Entity entity) {
-        try {
-            // 获取 IClientItemExtensions
-            Class<?> extensionClass = Class.forName(BEWLR_EXTENSION_CLASS);
-            Object extensions = stack.getItem().getClass()
-                    .getMethod("getClientExtensions")
-                    .invoke(stack.getItem());
-            
-            java.lang.reflect.Method getMethod = extensionClass
-                    .getMethod("getCustomRenderer");
-            Object customRenderer = getMethod.invoke(extensions);
-            
-            if (customRenderer == null) {
-                return null;
-            }
-            
-            // 调用 renderByItem 获取模型
-            java.lang.reflect.Method renderMethod = customRenderer.getClass()
-                    .getMethod("renderByItem", ItemStack.class, ItemDisplayContext.class, 
-                               PoseStack.class, net.minecraft.client.renderer.MultiBufferSource.class);
-            
-            // 创建临时 buffer
-            net.minecraft.client.renderer.MultiBufferSource.BufferSource tempBuffer = 
-                    net.minecraft.client.Minecraft.getInstance().getBufferSource();
-            
-            // 调用渲染获取 quads (简化处理，实际需要完整调用)
-            renderMethod.invoke(customRenderer, stack, ItemDisplayContext.GUI, 
-                                new PoseStack(), tempBuffer);
-            
-            return null; // 返回 null 表示使用默认
-        } catch (Exception e) {
+        // BEWLR 物品的自定义模型处理在 OutlineRenderer 中进行
+        // 此处返回 null 表示使用默认模型
+        return null;
+    }
+
+    @Nullable
+    @Override
+    public ItemTypeInfo resolve(Item item) {
+        if (!matches(item)) {
             return null;
         }
+        
+        // BEWLR 物品的类型信息构建
+        return new ItemTypeInfo(
+            item, true, false, false, false, false, false, this, null, null, null, null, false, false, false
+        );
     }
 }

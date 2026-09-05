@@ -1,9 +1,13 @@
 package com.enchantedoutlines.mod.api.color;
 
 import com.enchantedoutlines.mod.config.Config;
+import net.minecraft.core.Holder;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.enchantment.Enchantment;
+import net.minecraft.world.item.enchantment.ItemEnchantments;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -49,7 +53,7 @@ public final class ColorResolver {
      * @return 描边颜色 (ARGB)
      */
     public int resolve(ItemStack stack) {
-        ResourceLocation itemId = stack.getItem().getRegistryName();
+        ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
 
         // 1. RPG 虹灯 (优先级最高)
         if (rpgRainbowEnabled && Config.ENABLE_RPG_RAINBOW.get()) {
@@ -87,7 +91,7 @@ public final class ColorResolver {
      * 解析 RPG 虹灯颜色。
      */
     private int resolveRainbowColor(ItemStack stack) {
-        ResourceLocation itemId = stack.getItem().getRegistryName();
+        ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
         long now = System.currentTimeMillis();
         long itemTime = itemRainbowTime.getOrDefault(itemId, 0L);
         
@@ -111,16 +115,19 @@ public final class ColorResolver {
     private List<ResourceLocation> getEnchantments(ItemStack stack) {
         List<ResourceLocation> enchantIds = new ArrayList<>();
         
-        try {
-            net.minecraft.world.item.enchantment.EnchantmentHelper.getEnchantments(stack.getEnchantmentMap())
-                    .forEach((enchant, level) -> {
-                        ResourceLocation id = enchant.getRegistryName();
-                        if (id != null) {
-                            enchantIds.add(id);
-                        }
-                    });
-        } catch (Exception e) {
-            // 兼容不同版本的附魔 API
+        // NeoForge 21.x: 通过 DataComponents.ENCHANTMENTS 获取 ItemEnchantments
+        ItemEnchantments enchantments = stack.getOrDefault(DataComponents.ENCHANTMENTS, ItemEnchantments.EMPTY);
+        if (enchantments.isEmpty()) {
+            return enchantIds;
+        }
+        
+        // ItemEnchantments.keySet() 返回 Holder<Enchantment>
+        for (Holder<Enchantment> holder : enchantments.keySet()) {
+            if (holder == null) {
+                continue;
+            }
+            // 使用 unwrapKey() 获取 ResourceLocation
+            holder.unwrapKey().ifPresent(key -> enchantIds.add(key.location()));
         }
         
         return enchantIds;

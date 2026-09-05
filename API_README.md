@@ -163,11 +163,29 @@ OutlineRenderingApi.INSTANCE.registerAdapter(new MyCustomAdapter());
 - **算法**: 屏幕偏移
 - **原理**: 8 方向平移 + 形状纹理
 - **适用**: GUI 物品、手持扁平物品
+- **动画序列支持**: 通过 `TextureAtlasSprite.contents().originalImage` 反射读取**当前帧**的 NativeImage，描边自动跟随动画帧同步更新
 
 ### 3D 物品 (`is3d = true`)
 - **算法**: 顶点法线外扩
 - **原理**: 每个顶点沿平均法线方向外扩固定距离
 - **适用**: 3D 物品、手持 3D 物品
+
+## 形状纹理生成机制
+
+### CPU 读取贴图 alpha
+描边形状由贴图 alpha 通道决定，通过以下方式获取源贴图像素:
+
+1. **Atlas 精灵**(扁平物品):反射读取 `SpriteContents.originalImage`(NativeImage,CPU 内存)
+2. **独立纹理**(盔甲/鞘翅):使用 `ImageIO.read(InputStream)` 读取 PNG,支持 palette+tRNS 格式
+
+### 动画序列处理
+- **当前帧优先**:形状纹理生成时读取 sprite 的**当前帧**(非关键帧),描边与本体动画同步
+- **缓存策略**:形状纹理按`(源贴图 location,描边色，曝光开关)`缓存，资源重载时自动失效
+- **性能优化**:亮度统计按贴图缓存，避免重复遍历像素
+
+### 形状纹理格式
+- **无光影**:自定义描边 shader 采样`RGB=描边色×物品颜色,A=原贴图 alpha`
+- **光影 fallback**:`worldEmissiveOutlineRenderType` + emissive 混合
 
 ### BEWLR 物品
 - **算法**: 几何放大壳 / 逐 cube 外扩

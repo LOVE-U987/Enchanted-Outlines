@@ -1,13 +1,14 @@
 package com.enchantedoutlines.mod.api.pipeline;
 
 import com.enchantedoutlines.mod.api.adapter.ItemModelAdapter;
+import com.enchantedoutlines.mod.api.algo.ShapeDetector;
 import com.enchantedoutlines.mod.api.algo.ShapeResult;
 import com.enchantedoutlines.mod.api.core.ItemTypeInfo;
 import com.enchantedoutlines.mod.api.core.OutlineRenderingApi;
 import com.enchantedoutlines.mod.outline.OutlineRenderer;
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.model.HumanoidModel;
-import net.minecraft.client.renderer.block.model.BakedModel;
+import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;

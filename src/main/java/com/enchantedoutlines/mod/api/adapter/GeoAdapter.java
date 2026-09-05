@@ -1,8 +1,9 @@
 package com.enchantedoutlines.mod.api.adapter;
 
 import com.enchantedoutlines.mod.outline.OutlineRenderer;
+import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.model.HumanoidModel;
-import net.minecraft.client.renderer.block.model.BakedModel;
+import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.Item;
@@ -16,6 +17,8 @@ import org.jetbrains.annotations.Nullable;
  */
 public class GeoAdapter implements ItemModelAdapter {
 
+    public static final GeoAdapter INSTANCE = new GeoAdapter();
+
     private static final String GEO_RENDER_PROVIDER =
             "software.bernie.geckolib.animatable.client.GeoRenderProvider";
     private static final String AZURE_REGISTRY =
@@ -27,7 +30,7 @@ public class GeoAdapter implements ItemModelAdapter {
     }
 
     @Override
-    public boolean canHandle(Item item) {
+    public boolean matches(Item item) {
         // 检查是否为 Geo 物品
         return isGeoItem(item) || isGeoArmor(item);
     }
@@ -88,7 +91,7 @@ public class GeoAdapter implements ItemModelAdapter {
 
     @Override
     public boolean canHandleGui(ItemStack stack) {
-        return canHandle(stack.getItem()) && !isAzureLib(stack.getItem());
+        return matches(stack.getItem()) && !isAzureLib(stack.getItem());
     }
 
     @Override
@@ -170,5 +173,22 @@ public class GeoAdapter implements ItemModelAdapter {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    @Nullable
+    @Override
+    public com.enchantedoutlines.mod.api.core.ItemTypeInfo resolve(net.minecraft.world.item.Item item) {
+        if (!matches(item)) {
+            return null;
+        }
+        
+        boolean isAzure = isAzureLib(item);
+        
+        // Geo 物品的类型信息构建
+        // 参数顺序：item, isBewlr, isGeo, isAzureLib, isLionfish, isTacz, isFlat,
+        //           bewlrAdapter, geoAdapter, lionfishAdapter, taczAdapter, hazenAdapter, isArmor, isElytra, isProjectile
+        return new com.enchantedoutlines.mod.api.core.ItemTypeInfo(
+            item, false, true, isAzure, false, false, false, null, this, null, null, null, false, false, false
+        );
     }
 }

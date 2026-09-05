@@ -57,5 +57,20 @@
   "enchanted_outlines.config.disabledItems.tooltip": "Comma-separated item ids that never get an outline, even when enchanted. Supports wildcards: minecraft:* disables the whole minecraft namespace.",
 
   "enchanted_outlines.config.save": "Save",
-  "enchanted_outlines.config.cancel": "Cancel"
+  "enchanted_outlines.config.cancel": "Cancel",
+
+  "enchanted_outlines.config.category.advanced": "Advanced",
+  "enchanted_outlines.config.category.experimental": "Experimental",
+
+  "enchanted_outlines.config.enableTaczCompat": "TACZ Compatibility",
+  "enchanted_outlines.config.enableTaczCompat.tooltip": "Enable special rendering support for The Arsenal Collection Z mod.",
+
+  "enchanted_outlines.config.enableRPGRainbow": "RPG Rainbow Effect",
+  "enchanted_outlines.config.enableRPGRainbow.tooltip": "Enable RPG rainbow effect (dynamic rainbow outlines): true = outline color changes over time, forming a rainbow effect (highest priority, overrides all other color configs); false = use normal color config.",
+
+  "enchanted_outlines.config.enableDataPackColors": "Data Pack Colors",
+  "enchanted_outlines.config.enableDataPackColors.tooltip": "Load colors from assets/enchanted_outlines/color/pack.json: priority below RPG rainbow, above config file.",
+
+  "enchanted_outlines.config.optimizeConfigUi": "Config UI Optimization",
+  "enchanted_outlines.config.optimizeConfigUi.tooltip": "true = config screen shows categorized sections (General/Colors/Advanced/Experimental); false = use default linear layout."
 }

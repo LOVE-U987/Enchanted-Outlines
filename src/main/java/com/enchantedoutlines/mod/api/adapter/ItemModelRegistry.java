@@ -2,6 +2,8 @@ package com.enchantedoutlines.mod.api.adapter;
 
 import com.enchantedoutlines.mod.api.core.ItemTypeInfo;
 import com.enchantedoutlines.mod.config.Config;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import org.jetbrains.annotations.Nullable;
 
@@ -64,36 +66,41 @@ public final class ItemModelRegistry {
         GeoAdapter geoAdapter = null;
         LionfishAdapter lionfishAdapter = null;
         TaczAdapter taczAdapter = null;
+        HazenAdapter hazenAdapter = null;
 
         boolean isBewlr = false;
         boolean isGeo = false;
         boolean isAzureLib = false;
         boolean isLionfish = false;
         boolean isTacz = false;
+        boolean isHazen = false;
 
         // 按优先级检查各适配器
         for (ItemModelAdapter adapter : adapters) {
-            if (adapter instanceof BewlrAdapter && adapter.canHandle(item)) {
+            if (adapter instanceof BewlrAdapter && adapter.matches(item)) {
                 isBewlr = true;
                 bewlrAdapter = (BewlrAdapter) adapter;
-            } else if (adapter instanceof GeoAdapter && adapter.canHandle(item)) {
+            } else if (adapter instanceof GeoAdapter && adapter.matches(item)) {
                 isGeo = true;
                 geoAdapter = (GeoAdapter) adapter;
                 if (geoAdapter.isAzureLib(item)) {
                     isAzureLib = true;
                 }
-            } else if (adapter instanceof LionfishAdapter && adapter.canHandle(item)) {
+            } else if (adapter instanceof LionfishAdapter && adapter.matches(item)) {
                 isLionfish = true;
                 lionfishAdapter = (LionfishAdapter) adapter;
-            } else if (adapter instanceof TaczAdapter && adapter.canHandle(item)) {
+            } else if (adapter instanceof TaczAdapter && adapter.matches(item)) {
                 isTacz = true;
                 taczAdapter = (TaczAdapter) adapter;
+            } else if (adapter instanceof HazenAdapter && adapter.matches(item)) {
+                isHazen = true;
+                hazenAdapter = (HazenAdapter) adapter;
             }
         }
 
         return new ItemTypeInfo(
             item, isBewlr, isGeo, isAzureLib, isLionfish, isTacz, isFlat,
-            bewlrAdapter, geoAdapter, lionfishAdapter, taczAdapter,
+            bewlrAdapter, geoAdapter, lionfishAdapter, taczAdapter, hazenAdapter,
             isArmor, isElytra, isProjectile
         );
     }
@@ -124,16 +131,16 @@ public final class ItemModelRegistry {
      * 判断物品是否为鞘翅。
      */
     private boolean isElytra(Item item) {
-        return item.getRegistryName() != null &&
-               item.getRegistryName().toString().equals("minecraft:elytra");
+        ResourceLocation loc = BuiltInRegistries.ITEM.getKey(item);
+        return loc != null && "minecraft:elytra".equals(loc.toString());
     }
 
     /**
      * 判断物品是否为投掷物。
      */
     private boolean isProjectile(Item item) {
-        return item.getRegistryName() != null &&
-               item.getRegistryName().toString().equals("minecraft:trident");
+        ResourceLocation loc = BuiltInRegistries.ITEM.getKey(item);
+        return loc != null && "minecraft:trident".equals(loc.toString());
     }
 
     /**

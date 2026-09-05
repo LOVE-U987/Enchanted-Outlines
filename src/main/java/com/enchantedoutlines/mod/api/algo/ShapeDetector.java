@@ -1,9 +1,11 @@
 package com.enchantedoutlines.mod.api.algo;
 
 import com.enchantedoutlines.mod.api.core.ItemTypeInfo;
+import com.enchantedoutlines.mod.config.Config;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import net.minecraft.client.renderer.block.model.BakedQuad;
+import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Vec3i;
@@ -203,13 +205,39 @@ public final class ShapeDetector {
                 continue;
             }
             
-            ResourceLocation loc = sprite.getId();
-            if (!stoneLocation.equals(loc)) {
+            // NeoForge 20.x: sprite 没有 getId() 方法，用反射获取 resourceKey
+            ResourceLocation loc = spriteLocation(sprite);
+            if (loc == null || !stoneLocation.equals(loc)) {
                 return false;
             }
         }
         
         return !quads.isEmpty();
+    }
+
+    /**
+     * 获取精灵的 ResourceLocation。
+     * NeoForge 20.x 中 TextureAtlasSprite 没有 getId()，需要通过 reflection 获取 location 字段。
+     */
+    private ResourceLocation spriteLocation(TextureAtlasSprite sprite) {
+        try {
+            // 尝试从当前类或父类中找到 location 字段
+            for (Class<?> clazz = sprite.getClass(); clazz != null && clazz != Object.class; clazz = clazz.getSuperclass()) {
+                try {
+                    Field field = clazz.getDeclaredField("location");
+                    field.setAccessible(true);
+                    Object locObj = field.get(sprite);
+                    if (locObj instanceof ResourceLocation) {
+                        return (ResourceLocation) locObj;
+                    }
+                } catch (NoSuchFieldException e) {
+                    // 继续搜索父类
+                }
+            }
+        } catch (Exception e) {
+            // 静默失败
+        }
+        return null;
     }
 
     /**

@@ -11,6 +11,7 @@ import javax.imageio.ImageIO;
 import java.io.InputStream;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.function.Consumer;
 
 /**
  * 形状纹理提供者接口。
@@ -29,6 +30,24 @@ public interface OutlineShapeTextureProvider {
      */
     @Nullable
     ResourceLocation getShapeTexture(TextureAtlasSprite sprite, int color, boolean reduceExposure);
+
+    /**
+     * 提供形状纹理并执行渲染回调。
+     * <p>
+     * 内部会生成/缓存形状纹理，然后调用回调进行渲染。
+     *
+     * @param sprite  源贴图
+     * @param color   描边颜色 (RGB)
+     * @param reduceExposure 是否压暗曝光
+     * @param consumer 渲染回调，参数为纹理位置
+     */
+    default void provideShapeTexture(TextureAtlasSprite sprite, int color, boolean reduceExposure,
+                                      Consumer<ResourceLocation> consumer) {
+        ResourceLocation loc = getShapeTexture(sprite, color, reduceExposure);
+        if (loc != null) {
+            consumer.accept(loc);
+        }
+    }
 
     /**
      * 检查是否需要使用 vanilla shader fallback(光影兼容)。

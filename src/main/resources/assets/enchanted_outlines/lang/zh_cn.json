@@ -57,5 +57,20 @@
   "enchanted_outlines.config.disabledItems.tooltip": "逗号分隔的物品 id,这些物品即使带附魔也不描边。支持通配符:如 minecraft:* 禁用整个 minecraft 命名空间、minecraft:di* 禁用路径以 di 开头的物品。",
 
   "enchanted_outlines.config.save": "保存",
-  "enchanted_outlines.config.cancel": "取消"
+  "enchanted_outlines.config.cancel": "取消",
+
+  "enchanted_outlines.config.category.advanced": "高级",
+  "enchanted_outlines.config.category.experimental": "实验性",
+
+  "enchanted_outlines.config.enableTaczCompat": "TACZ 专项兼容",
+  "enchanted_outlines.config.enableTaczCompat.tooltip": "启用 TACZ (The Arsenal Collection Z) 模组的特殊渲染支持。",
+
+  "enchanted_outlines.config.enableRPGRainbow": "RPG 虹灯效果",
+  "enchanted_outlines.config.enableRPGRainbow.tooltip": "启用 RPG 虹灯效果 (动态彩虹描边):true = 描边颜色随时间动态变化，形成彩虹效果 (优先级最高，覆盖所有其他颜色配置);false = 使用正常颜色配置。",
+
+  "enchanted_outlines.config.enableDataPackColors": "数据包颜色",
+  "enchanted_outlines.config.enableDataPackColors.tooltip": "从 assets/enchanted_outlines/color/pack.json 加载颜色配置：优先级低于 RPG 虹灯，高于配置文件。",
+
+  "enchanted_outlines.config.optimizeConfigUi": "配置界面优化",
+  "enchanted_outlines.config.optimizeConfigUi.tooltip": "true = 配置界面按功能分类显示 (通用/颜色/高级/实验性);false = 使用默认线性布局。"
 }

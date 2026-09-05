@@ -3,11 +3,14 @@ package com.enchantedoutlines.mod.api.core;
 import com.enchantedoutlines.mod.api.adapter.ItemModelAdapter;
 import com.enchantedoutlines.mod.api.algo.ShapeResult;
 import com.enchantedoutlines.mod.api.color.ColorResolver;
+import com.enchantedoutlines.mod.api.pipeline.RenderPipeline;
 import com.enchantedoutlines.mod.config.Config;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.model.HumanoidModel;
-import net.minecraft.client.renderer.block.model.BakedModel;
+import net.minecraft.client.resources.model.BakedModel;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.Item;
@@ -46,10 +49,11 @@ public final class OutlineRenderingApi {
             return false;
         }
         Item item = stack.getItem();
-        if (!Config.isItemEnabled(item.getRegistryName())) {
+        ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(item);
+        if (!Config.isItemEnabled(itemId)) {
             return false;
         }
-        if (Config.isItemDisabled(item.getRegistryName())) {
+        if (Config.isItemDisabled(itemId)) {
             return false;
         }
         return true;
