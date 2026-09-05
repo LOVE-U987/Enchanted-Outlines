@@ -1907,6 +1907,24 @@ public final class OutlineRenderer {
         }
     }
 
+    /**
+     * 通过Minecraft标准方法获取BEWLR物品模型（通用适配方式）。
+     * 
+     * @param stack 物品栈
+     * @return BakedModel 实例，如果获取失败返回null
+     */
+    private BakedModel getUniversalBewlrModel(ItemStack stack) {
+        try {
+            // 通过标准的Minecraft渲染路径来获取模型
+            return Minecraft.getInstance().getItemRenderer()
+                    .getItemModelShaper()
+                    .getModel(stack);
+        } catch (Exception e) {
+            // 如果获取失败，返回null
+            return null;
+        }
+    }
+
     /** 反射读取 BEWLR 模型 + 来源模组的预变换类别。 */
     private BewlrModel findBewlrModel(ItemStack stack) {
         String path = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
