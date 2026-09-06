@@ -153,7 +153,7 @@ public abstract class ItemInHandRendererMixin {
             pose.translate(-0.5F, -0.5F, -0.5F);
             if (model.isCustomRenderer()) {
                 // 手持 BEWLR 物品(永恒星光/灾变武器等):反射模型做 3D 放大壳描边
-                if (!OutlineRenderer.INSTANCE.renderBewlrEntityOutline(stack, pose, color, thickness)) {
+                if (!OutlineRenderer.INSTANCE.renderBewlrEntityOutline(stack, pose, context, color, thickness)) {
                     return; // 拿不到模型:跳过(与 ItemRendererMixin 一致)
                 }
             } else {

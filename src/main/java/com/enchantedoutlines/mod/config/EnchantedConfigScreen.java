@@ -118,12 +118,11 @@ public class EnchantedConfigScreen extends Screen {
         } else if (selectedCategory == 2) { // advanced
             y = addDoubleRow(y, "bewlr3dScale", Config.BEWLR_3D_SCALE, 0.05, 1.0, widgetX);
             y = addBooleanRow(y, "bewlr3dPerCube", Config.BEWLR_3D_PER_CUBE, widgetX);
-            y = addBooleanRow(y, "enableTaczCompat", Config.ENABLE_TACZ_COMPAT, widgetX);
+            y = addBooleanRow(y, "taczCompat", Config.ENABLE_TACZ_COMPAT, widgetX);
+            y = addBooleanRow(y, "hazenCompat", Config.ENABLE_HAZEN_COMPAT, widgetX);
             y = addMergeModeRow(y, widgetX);
         } else { // experimental
             y = addBooleanRow(y, "enableRPGRainbow", Config.ENABLE_RPG_RAINBOW, widgetX);
-            y = addBooleanRow(y, "enableDataPackColors", Config.ENABLE_DATAPACK_COLORS, widgetX);
-            y = addBooleanRow(y, "optimizeConfigUi", Config.OPTIMIZE_CONFIG_UI, widgetX);
         }
 
         // 底部完成按钮

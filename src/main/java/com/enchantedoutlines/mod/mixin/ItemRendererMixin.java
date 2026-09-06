@@ -144,7 +144,7 @@ public abstract class ItemRendererMixin {
             if (bewlrHandheld) {
                 // 本体手持 = BEWLR 自定义实体模型 (模组渲染器内部无额外姿态变换，直接
                 // renderToBuffer)→ 反射模型做逐 cube/整体放大壳，与本体同变换对齐。
-                if (!OutlineRenderer.INSTANCE.renderBewlrEntityOutline(stack, pose, color, thickness)) {
+                if (!OutlineRenderer.INSTANCE.renderBewlrEntityOutline(stack, pose, context, color, thickness)) {
                     return; // 拿不到模型：跳过 (与修复前一致)
                 }
             } else if (context == ItemDisplayContext.FIXED) {

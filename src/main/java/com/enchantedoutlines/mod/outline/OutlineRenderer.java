@@ -12,7 +12,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.WeakHashMap;
 
-import com.enchantedoutlines.mod.EnchantedOutlines;
 import com.enchantedoutlines.mod.config.Config;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.shaders.Uniform;
@@ -134,6 +133,45 @@ public final class OutlineRenderer {
         return IN_ITEM_IN_HAND_RENDERER.get();
     }
 
+    /**
+     * 当前是否处于 {@code GuiGraphics.renderItem}(背包/容器/快捷栏等 GUI 物品)渲染
+     * 上下文的标记。
+     * <p>
+     * ⚠️ <b>GUI 屏幕空间渲染不经 Iris 光影</b>(见 {@link #needVanillaShaderFallback}):
+     * 光影激活状态只对世界渲染(LevelRenderer)生效,GUI 物品图标始终用原版渲染管线
+     * 绘制自定义 shader。若 GUI 期间仍按光影状态 fallback 到 emissive RenderType
+     * (带 LIGHTMAP/OVERLAY 状态、为世界渲染设计),背包/容器 UI 里<b>所有非方块物品</b>
+     * 的轮廓会渲染成错误的淡灰色 —— 方块(GUI 3D)走 {@code handOutlineRenderType}
+     * 恒自定义 shader 不受影响,所以"物品灰、方块正常"(2026-08-31 事故,波及含
+     * TACZ/Spore 在内的全部模组扁平物品与 Geo/BEWLR GUI 图标)。
+     * <p>
+     * {@code GuiGraphicsMixin} 在 renderItem HEAD/RETURN 设置/清除本标记;期间
+     * {@link #needVanillaShaderFallback()} 恒返回 false(且不更新全局缓存,避免污染
+     * 世界渲染的光影判断)。
+     * <p>
+     * 放在本普通类而非 mixin 类:Mixin 会把非私有方法尝试合并进目标类,public
+     * static 工具方法会抛 InvalidMixinException(2026-08-13 崩溃)。
+     */
+    private static final ThreadLocal<Boolean> IN_GUI_RENDER = ThreadLocal.withInitial(() -> Boolean.FALSE);
+
+    /**
+     * 设置/清除 {@code GuiGraphics.renderItem} GUI 渲染标记。
+     *
+     * @param in true = 进入 GUI 物品渲染(描边恒用自定义 shader,不按光影 fallback)
+     */
+    public static void markGuiRender(boolean in) {
+        IN_GUI_RENDER.set(in);
+    }
+
+    /**
+     * 查询当前是否处于 {@code GuiGraphics.renderItem} GUI 渲染上下文。
+     *
+     * @return true = GUI 屏幕空间渲染(不经 Iris,恒自定义 shader)
+     */
+    public static boolean isInGuiRender() {
+        return IN_GUI_RENDER.get();
+    }
+
     /** 全亮光照(GUI 物品标准光照)。 */
     private static final int FULL_BRIGHT = 0xF000F0;
 
@@ -172,6 +210,16 @@ public final class OutlineRenderer {
     private static final float ARMOR_REF_DIAG = 0.468f;
 
     /**
+     * BEWLR 渲染捕获的 AABB 最大允许跨度(模型单位)。
+     * <p>
+     * 正常情况下手持/GUI/掉落/展示框物品经 display 变换后的包围盒都在几个模型
+     * 单位以内;自绘 BEWLR(如 TACZ 第一人称)在 display 后追加相机/动画预变换时,
+     * 捕获顶点会被抬到相机空间 → 包围盒跨度动辄数十/数百单位。超过本阈值即判定
+     * 捕获姿态错乱,返回 false 跳过描边(避免"天上巨大模型、本体无描边"事故)。
+     */
+    private static final float CAPTURE_MAX_SPAN = 64.0f;
+
+    /**
      * ⚠️ 鞘翅描边<b>与盔甲共用同一系数与参考对角线</b>(v0.1.7 修正)。
      * <p>
      * 此前鞘翅用独立系数 0.09 + refDiag 0.701,外扩像素 = thickness×0.5×0.09×
@@ -198,6 +246,13 @@ public final class OutlineRenderer {
 
     /** 描边着色器的硬切不透明 Uniform 引用(缓存,避免每帧每格重复字符串查找)。 */
     private volatile Uniform outlineCutoutUniform;
+
+    /**
+     * 描边着色器的"混色来源" Uniform 引用(缓存,避免每帧每格重复字符串查找)。
+     * 扁平"形状纹理"路径与盔甲混色路径需在顶点色之外混入贴图 RGB,
+     * 而 3D 几何壳路径颜色全在顶点色里 —— 用该 uniform 区分(见 fsh)。
+     */
+    private volatile Uniform outlineBlendUniform;
 
     /**
      * 描边专用缓冲源。独立于 GuiGraphics.bufferSource(),渲染完立即 endBatch →
@@ -241,16 +296,20 @@ public final class OutlineRenderer {
      */
     private final Map<BakedModel, ModelGeometry> modelGeometryCache = new WeakHashMap<>();
 
-    /** 形状纹理缓存键:物品贴图 + 描边色(RGB) + 是否压暗曝光(开关切换时缓存失效)。 */
-    private record ShapeKey(ResourceLocation spriteName, int color, boolean reduceExposure) {
+    /** 形状纹理缓存键:物品贴图 + 描边色(RGB) + 是否压暗曝光 + 是否混物体贴图色(开关切换时缓存失效)。 */
+    private record ShapeKey(ResourceLocation spriteName, int color, boolean reduceExposure, boolean mix) {
     }
 
-    /** 动画序列精灵缓存键：包含帧索引，避免动画帧切换后仍使用旧帧形状纹理。 */
-    private record AnimatedShapeKey(ResourceLocation spriteName, int frameIndex, int color, boolean reduceExposure) {
-    }
-
-    /** 动画序列形状纹理缓存：key=帧索引 + 颜色，value=形状纹理 location。 */
-    private final Map<AnimatedShapeKey, ResourceLocation> animatedShapeTextures = new HashMap<>();
+    /**
+     * "纹理是否全透明"(无任何 alpha&gt;0 像素)检测缓存(按纹理 location)。
+     * <p>
+     * 用途:盔甲/鞘翅/投掷物描边采样纹理 alpha 做遮罩,若纹理<b>完全透明</b>(如真菌感染
+     * Spore 的 SporeBaseArmor.getArmorTexture 恒返回 spore:textures/entity/empty.png),
+     * 描边壳整体透明不可见 → {@link #armorOutlineRenderType} 把采样源回退为
+     * {@link #WHITE_TEXTURE}(纯几何壳)。检测结果与帧无关,按 location 缓存避免每帧读 PNG;
+     * 资源重载(F3+T)时随 {@link #invalidateCaches} 清空重建。
+     */
+    private final Map<ResourceLocation, Boolean> transparentTextureCache = new HashMap<>();
 
     /** 三叉戟实体纹理(投掷物 ThrownTrident 的模型材质)。 */
     private static final ResourceLocation TRIDENT_ENTITY_TEXTURE =
@@ -299,6 +358,15 @@ public final class OutlineRenderer {
      * 可接受(AGENTS.md #5)。
      */
     private boolean needVanillaShaderFallback() {
+        // ⚠️ GUI 渲染不经光影,始终用自定义 shader:背包/容器/快捷栏等 GuiGraphics
+        // 物品渲染期间,即使光影激活也绝不 fallback —— fallback 的 emissive RenderType
+        // 带 LIGHTMAP/OVERLAY 状态(为世界渲染设计),在 GUI 屏幕空间会把轮廓渲染成
+        // 淡灰色(2026-08-31 事故:方块走 handOutlineRenderType 恒自定义,扁平物品
+        // renderFlatOutlineShape 内部查本方法 → 物品灰、方块正常)。GUI 期间直接返回
+        // false 且<b>不更新</b> 500ms 缓存(避免污染随后世界渲染的光影判断)。
+        if (isInGuiRender()) {
+            return false;
+        }
         // 渲染热路径(每帧每格调用):反射检测有真实开销,按时间间隔缓存结果。
         // Iris 光影包切换不频繁,500ms 刷新一次即可;切换后最多延迟半秒生效。
         long now = System.currentTimeMillis();
@@ -422,6 +490,7 @@ public final class OutlineRenderer {
         // 查找;资源重载后 shader 是新实例,Uniform 引用随之刷新。
         this.outlineAlphaBoostUniform = shader != null ? shader.getUniform("OutlineAlphaBoost") : null;
         this.outlineCutoutUniform = shader != null ? shader.getUniform("OutlineCutout") : null;
+        this.outlineBlendUniform = shader != null ? shader.getUniform("OutlineBlend") : null;
         // 资源重载(F3+T 触发 RegisterShadersEvent)时,TextureManager 已销毁全部注册纹理,
         // 全部缓存(形状纹理/亮度/RenderType/近似模型)一并失效 → 清空以便按需重建
         // (AGENTS.md #7:缓存不随资源重载清理会导致"退出服务器重进渲染错误"等脏状态)。
@@ -445,7 +514,6 @@ public final class OutlineRenderer {
      */
     public void invalidateCaches() {
         this.shapeTextures.clear();
-        this.animatedShapeTextures.clear();
         this.lumaCache.clear();
         this.worldOutlineRenderTypes.clear();
         this.armorRenderTypes.clear();
@@ -456,11 +524,13 @@ public final class OutlineRenderer {
         this.tridentModel = null;
         this.tridentTransforms = null;
         this.modelGeometryCache.clear();
+        this.lionfishCubeCache.clear(); // Lionfish 静态几何缓存(与 geoCubeCache 一致清理)
         this.geoCubeCache.clear();
         this.geoItemModelCache.clear();
         this.geoItemKindCache.clear();
         this.azureLibArmorCache.clear();
         this.geckoLibArmorCache.clear();
+        this.transparentTextureCache.clear();
     }
 
     /**
@@ -478,6 +548,9 @@ public final class OutlineRenderer {
         // 各渲染路径默认半透明 → 重置 cutout;需要不透明的路径(物品展示框)在 boost
         // 之后再用 setOutlineCutout(true) 覆盖(见 renderHandOutline 6 参重载)。
         setOutlineCutout(false);
+        // 默认不混入贴图 RGB:3D 几何壳颜色全在顶点色里;扁平形状纹理/盔甲混色路径
+        // 在各自绘制前用 setOutlineBlend(1) 覆盖。
+        setOutlineBlend(0.0f);
         Uniform uniform = this.outlineAlphaBoostUniform;
         if (uniform != null) {
             uniform.set(boost);
@@ -501,6 +574,31 @@ public final class OutlineRenderer {
         Uniform uniform = this.outlineCutoutUniform;
         if (uniform != null) {
             uniform.set(opaque ? 1.0f : 0.0f);
+        }
+    }
+
+    /**
+     * 设置描边颜色是否混入贴图 RGB(OutlineBlend uniform)。
+     * <p>
+     * fsh 的颜色公式:{@code vertexColor.rgb × mix(1, texel.rgb, OutlineBlend)}:
+     * <ul>
+     *   <li>{@code blend=0}(默认):纯描边色 —— 3D 几何壳路径的颜色全在顶点色里
+     *       {@code emitVertexNormalExpand} / {@code renderGui3dInflate} 等;</li>
+     *   <li>{@code blend=1}:混入贴图 RGB —— 扁平"形状纹理"把描边色烘焙进贴图
+     *       (顶点色为白 → 结果 = 描边色,修复 GUI/手持扁平描边被渲染成<b>白色</b>
+     *       的事故);以及盔甲混色开({@link Config#ARMOR_PIXEL_COLOR_GLINT})时
+     *       描边色 × 盔甲纹理色混合。</li>
+     * </ul>
+     * ⚠️ uniform 是 shader 程序级全局状态,必须在<b>该批顶点 flush 之前</b>设置、
+     * 且各绘制路径在 setOutlineAlphaBoost 里已默认重置为 0,路径内再按需覆盖;
+     * 每个绘制都在 endBatch 收尾,不存在 3D/扁平跨批污染。
+     *
+     * @param blend 0 = 纯描边色(默认);1 = 混入贴图 RGB
+     */
+    private void setOutlineBlend(float blend) {
+        Uniform uniform = this.outlineBlendUniform;
+        if (uniform != null) {
+            uniform.set(blend);
         }
     }
 
@@ -544,6 +642,11 @@ public final class OutlineRenderer {
             // ⚠️ 用形状纹理路径(renderFlatOutlineShape),不依赖模型 UV 采样 BLOCK_SHEET
             // —— 模组扁平模型 UV 常为 [0,1] 全图,旧 emitQuad 采样越界 → 平面正方形
             // (2026-08-16 事故,见 renderFlatOutlineShape 注释)。
+            // ⚠️ GUI 是屏幕空间渲染,不经 Iris 光影(见 needVanillaShaderFallback 注释),
+            // 由 GuiGraphicsMixin 设置的 IN_GUI_RENDER 标记保证本路径恒用自定义 shader——
+            // 若按光影状态切 emissive,开光影时背包扁平物品轮廓会变淡灰(2026-08-31
+            // 事故:方块走 handOutlineRenderType 恒自定义不受影响,扁平物品在此被错误
+            // fallback)。
             pose.pushPose();
             try {
                 pose.translate(x + 8, y + 8, z);
@@ -747,15 +850,6 @@ public final class OutlineRenderer {
         // 手持描边发光半透明:boost=1.0(物品内部≈1、边缘渐变更淡),配合全亮光照呈
         // 半透明发光效果;不再抬升到 2.0(那会让第一人称近距物品的描边完全实心不透明)。
         renderHandOutline(model, pose, color, thickness, 1.0f, false);
-    }
-
-    /**
-     * 手持描边,可指定 {@link #setOutlineAlphaBoost(float) OutlineAlphaBoost}(半透明)。
-     *
-     * @param boost OutlineAlphaBoost(手持 1.0 半透明;部分背景路径 2.0)
-     */
-    public void renderHandOutline(BakedModel model, PoseStack pose, int color, float thickness, float boost) {
-        renderHandOutline(model, pose, color, thickness, boost, false);
     }
 
     /**
@@ -1125,10 +1219,19 @@ public final class OutlineRenderer {
      * 与模型 UV 无关 → 任意模组扁平物品都遵循轮廓。
      * <ul>
      *   <li>无光影:自定义描边 shader + 形状纹理({@link #guiOutlineRenderType});</li>
-     *   <li>光影 fallback:内置 emissive + 形状纹理({@link #worldEmissiveOutlineRenderType})。</li>
+     *   <li>光影 fallback(仅世界渲染):内置 emissive + 形状纹理({@link #worldEmissiveOutlineRenderType})。</li>
      * </ul>
-     * 颜色恒为<b>纯描边色</b>(形状纹理 RGB 已烘焙),不再与物品贴图混色 —— 这是摆脱
-     * 模型 UV 依赖的必然代价,换取任意模组扁平物品轮廓完整。
+     * 颜色恒为<b>纯描边色</b>(形状纹理 RGB 已烘焙) —— 这是摆脱模型 UV 依赖的必然代价
+     * (不采样 BLOCK_SHEET,任意模组扁平物品轮廓完整)。
+     * <p>
+     * <b>GUI 内纯色、GUI 外混物体贴图色</b>(2026-09-06):
+     * <ul>
+     *   <li>GUI(背包/容器/快捷栏):形状纹理烘<b>纯描边色</b>、不再按亮度压暗
+     *       (reduce=false)—— 与方块(3D)的 {@link #renderGui3dInflate} 完整描边色一致,
+     *       统一色相,不再出现"背包里物品暗于方块";</li>
+     *   <li>GUI 外(世界手持/掉落/展示框):当混色开启({@link Config#ITEM_PIXEL_COLOR_GLINT})
+     *       时烘焙 <b>描边色 × 贴图像素色</b>(mix),贴合物品本体颜色调制。</li>
+     * </ul>
      *
      * @param geo      已收集的模型几何(bySprite / 法线 / quad 索引缓存)
      * @param pose     已居中(translate(-0.5))且已应用 GUI/display 变换的 PoseStack
@@ -1141,9 +1244,18 @@ public final class OutlineRenderer {
         Map<TextureAtlasSprite, int[]> spriteQuadIndices = geo.spriteQuadIndices;
         List<Vec3i> geoNormals = geo.expandNormals;
         Vector3f tmp = new Vector3f();
+        // 形状纹理烘焙颜色模式(GUI 内恒纯色,与方块一致;GUI 外按混色配置烘焙
+        // "描边色×贴图像素色",贴合物品本体颜色调制)。GUI 由 GuiGraphicsMixin 的
+        // IN_GUI_RENDER 标记保证。
+        boolean mix = !isInGuiRender() && Config.ITEM_PIXEL_COLOR_GLINT.get();
+        // 形状纹理烘焙了描边色(顶点色为白,见 emitQuadShape),自定义 shader 必须
+        // 混入 texel.rgb 才能得到描边色,否则输出白色(2026-08-31 事故)。
+        // 光影 fallback 用内置 emissive(texel×vertex) 自动取到烘焙色,此设置仅对
+        // 自定义 shader 生效,统一在此设置。
+        setOutlineBlend(1.0f);
         for (Map.Entry<TextureAtlasSprite, List<BakedQuad>> entry : bySprite.entrySet()) {
             TextureAtlasSprite sprite = entry.getKey();
-            ResourceLocation tex = shapeTextureFor(sprite, color);
+            ResourceLocation tex = shapeTextureFor(sprite, color, false, mix);
             RenderType rt = needVanillaShaderFallback()
                     ? worldEmissiveOutlineRenderType(tex)
                     : guiOutlineRenderType(tex);
@@ -1203,12 +1315,15 @@ public final class OutlineRenderer {
      * @param source 源贴图 location(仅作缓存键与纹理命名)
      * @param src    源贴图像素(读取方负责获取与关闭)
      * @param color  ARGB 描边色
+     * @param reduce true = 按源贴图亮度压暗纯色描边(仅 {@link Config.OUTLINE_EXPOSURE_REDUCE});
+     *               false = 恒为纯描边色(与方块/3D 几何路径一致,不再压暗)
+     * @param mix    true = 烘焙 <b>描边色 × 贴图像素色</b>(GUI 外混物体贴图色,见
+     *               {@link #renderFlatOutlineShape});false = 烘焙纯描边色(GUI 内)
      * @return 已注册的纹理 location
      */
-    private ResourceLocation shapeTexture(ResourceLocation source, NativeImage src, int color) {
+    private ResourceLocation shapeTexture(ResourceLocation source, NativeImage src, int color, boolean reduce, boolean mix) {
         int rgb = color & 0xFFFFFF;
-        boolean reduce = Config.OUTLINE_EXPOSURE_REDUCE.get();
-        ShapeKey key = new ShapeKey(source, rgb, reduce);
+        ShapeKey key = new ShapeKey(source, rgb, reduce, mix);
         ResourceLocation loc = this.shapeTextures.get(key);
         if (loc == null) {
             int w = src.getWidth(), h = src.getHeight();
@@ -1218,27 +1333,35 @@ public final class OutlineRenderer {
             // 显著变暗、亮色物品基本不变 —— 模拟"混合算法根据物体颜色降低曝光"。
             // 同一贴图不同描边色会各生成一张形状纹理,亮度按 source 缓存避免重复遍历。
             float scale = reduce ? exposureScale(lumaOf(source, src)) : 1.0f;
-            int r = (int) (((rgb >> 16) & 0xFF) * scale);
-            int g = (int) (((rgb >> 8) & 0xFF) * scale);
-            int b = (int) ((rgb & 0xFF) * scale);
+            int baseR = (rgb >> 16) & 0xFF, baseG = (rgb >> 8) & 0xFF, baseB = rgb & 0xFF;
+            int r = (int) (baseR * scale), g = (int) (baseG * scale), b = (int) (baseB * scale);
             try {
                 for (int y = 0; y < h; y++) {
                     for (int x = 0; x < w; x++) {
                         // ⚠️ NativeImage RGBA 内存小端:getPixelRGBA 返回 ABGR 打包,
-                        // alpha 在最高字节;setPixelRGBA 写入 (a<<24)|(b<<16)|(g<<8)|r。
-                        // 通道顺序写错会导致形状/颜色错乱,改动前务必确认打包方向。
-                        int a = (src.getPixelRGBA(x, y) >>> 24) & 0xFF;
-                        img.setPixelRGBA(x, y, (a << 24) | (b << 16) | (g << 8) | r);
+                        // alpha 在最高字节,R/G/B 依次在低 3 字节;setPixelRGBA 写入
+                        // (alpha<<24)|(b<<16)|(g<<8)|r。通道顺序写错会弄乱形状/颜色。
+                        int abgr = src.getPixelRGBA(x, y);
+                        int a = (abgr >>> 24) & 0xFF;
+                        if (mix) {
+                            // GUI 外混物体贴图色:描边 = 描边色 × 物品本体像素色。
+                            // 既保留物品形状,描边色又随物品明暗,视觉上贴合本体。
+                            int pr = abgr & 0xFF, pg = (abgr >> 8) & 0xFF, pb = (abgr >> 16) & 0xFF;
+                            int mr = (baseR * pr) / 255, mg = (baseG * pg) / 255, mb = (baseB * pb) / 255;
+                            img.setPixelRGBA(x, y, (a << 24) | (mb << 16) | (mg << 8) | mr);
+                        } else {
+                            img.setPixelRGBA(x, y, (a << 24) | (b << 16) | (g << 8) | r);
+                        }
                     }
                 }
             } catch (Exception e) {
-                // 源贴图格式不支持像素读取(如 RGB 无 alpha)→ 无形状信息,回退纯色矩形
+                // 源贴图格式不支持像素读取(如 RGB 无 alpha)→ 无形状信息,回退纯色矩形。
                 return WHITE_TEXTURE;
             }
             loc = ResourceLocation.fromNamespaceAndPath("enchanted_outlines",
                     "shape/" + source.getNamespace() + "/"
                             + source.getPath().replace('/', '_') + "_"
-                            + Integer.toHexString(rgb));
+                            + Integer.toHexString(rgb) + (mix ? "_mix" : ""));
             Minecraft.getInstance().getTextureManager().register(loc, new DynamicTexture(img));
             this.shapeTextures.put(key, loc);
         }
@@ -1248,17 +1371,20 @@ public final class OutlineRenderer {
     /**
      * 扁平物品版形状纹理:从 atlas 精灵取原图像素后走统一入口 {@link #shapeTexture}。
      *
-     * @param sprite 物品贴图(atlas 精灵)
-     * @param color  ARGB 描边色
+     * @param sprite  物品贴图(atlas 精灵)
+     * @param color   ARGB 描边色
+     * @param reduce  true = 按源贴图亮度压暗纯色描边(见 {@link #shapeTexture})
+     * @param mix     true = 烘焙"描边色 × 贴图像素色"(GUI 外混物体贴图色)
      * @return 已注册的纹理 location;拿不到像素时回退纯白矩形
      */
-    private ResourceLocation shapeTextureFor(TextureAtlasSprite sprite, int color) {
+    private ResourceLocation shapeTextureFor(TextureAtlasSprite sprite, int color, boolean reduce, boolean mix) {
         NativeImage src = spriteOriginalImage(sprite);
         if (src == null) {
-            // 拿不到贴图像素(反射失败等):回退纯白矩形,保证描边仍可见
+            // spriteOriginalImage 反射 originalImage 失败 → 回退 WHITE_TEXTURE(1×1 不透明)
+            // → 8 方向平移画出整块矩形。本体直接渲染贴图(不依赖 originalImage)所以正常。
             return WHITE_TEXTURE;
         }
-        return shapeTexture(sprite.contents().name(), src, color);
+        return shapeTexture(sprite.contents().name(), src, color, reduce, mix);
     }
 
     /**
@@ -1281,7 +1407,7 @@ public final class OutlineRenderer {
     private ResourceLocation shapeTextureForLocation(ResourceLocation texture, int color) {
         int rgb = color & 0xFFFFFF;
         boolean reduce = Config.OUTLINE_EXPOSURE_REDUCE.get();
-        ShapeKey key = new ShapeKey(texture, rgb, reduce);
+        ShapeKey key = new ShapeKey(texture, rgb, reduce, false);
         ResourceLocation cached = this.shapeTextures.get(key);
         if (cached != null) {
             return cached; // 已生成过:直接复用,不再读 PNG
@@ -1317,7 +1443,7 @@ public final class OutlineRenderer {
                         src.setPixelRGBA(x, y, (a << 24) | (b << 16) | (g << 8) | r);
                     }
                 }
-                ResourceLocation loc = shapeTexture(texture, src, color);
+                ResourceLocation loc = shapeTexture(texture, src, color, reduce, false);
                 src.close();
                 return loc;
             }
@@ -1697,9 +1823,51 @@ public final class OutlineRenderer {
     private static final String[] BEWLR_MODEL_HOLDER_CLASSES = {
             "cn.leolezury.eternalstarlight.common.client.renderer.ESItemStackRenderer", // 永恒星光:scale(1,-1,-1)
             "com.github.L_Ender.cataclysm.client.render.CMItemstackRenderer",            // 灾变:预变换按物品映射表
-            "cn.leolezury.hazennstuff.client.renderer.HSNEnchantedItemStackRenderer",  // Hazen'N Stuff:scale(1,-1,-1)
-            "com.Harbinger.Spore.Client.SItemProperties",  // 真菌感染：孢子:scale(1,-1,-1)
+            // ⚠️ Hazen'N Stuff(HSNEnchantedItemStackRenderer)与真菌感染(Spore)未列入
+            // 持有类列表:
+            //   - Hazen:Geo/BEWLR 物品描边走通用 Geo 贴图取样 + 捕获兜底(见
+            //     {@link Config#ENABLE_HAZEN_COMPAT} 与 {@link #renderBewlrEntityOutline}
+            //     的 Hazen 分支),不依赖本静态字段适配;
+            //   - Spore:SItemProperties 经 javap 证实只有 makeBow/makeSickle/makeShield
+            //     等 ItemProperties 注册方法,<b>没有任何静态模型字段</b>,反射必然失败;
+            //     Spore 枪械是 Blockbench elements 自绘(不走静态字段 BEWLR 适配)。
     };
+
+    /**
+     * 物品注册 ID 是否属于 TACZ 命名空间。
+     * <p>
+     * TACZ 枪械(如 {@code tacz:modern_kinetic_gun})是<b>自绘 BEWLR</b>(渲染器
+     * GunItemRendererWrapper extends AnimateGeoItemRenderer,simplebedrockmodel 的
+     * Bedrock 骨骼):GUI 本体 = 2D slot 纹理平面,手持本体 = 3D Bedrock 模型,既无静态
+     * 模型字段也不属于 GeckoLib/AzureLib/Lionfish 体系 → 见 {@link #renderBewlrEntityOutline}
+     * 顶部拦截注释。
+     *
+     * @param stack 物品
+     * @return true = TACZ 物品
+     */
+    private static boolean isTaczNamespace(ItemStack stack) {
+        ResourceLocation id = BuiltInRegistries.ITEM.getKey(stack.getItem());
+        return id != null && ("tacz".equals(id.getNamespace())
+                || "thearsenalcollection".equals(id.getNamespace()));
+    }
+
+    /**
+     * 物品注册 ID 是否为 Hazen'N Stuff 命名空间({@code hazennstuff:})。
+     * <p>
+     * Hazen 武器大量为 GeckoLib GeoItem(StarfuryRenderer/黑曜石巨剑等),由
+     * {@link #renderBewlrEntityOutline} 的 Hazen 分支处理:先走 Geo 贴图取样路径
+     * (形状由本体贴图 alpha 决定,扁平 quad 不会膨胀成整块平面),失败再回退捕获
+     * 兜底。受 {@link Config#ENABLE_HAZEN_COMPAT} 控制(默认开启);关闭时整个命名
+     * 空间的 BEWLR/Geo 物品不描边。普通扁平物品(非 customRenderer,走扁平形状纹理)
+     * 与 AzureLib 盔甲(独立 HumanoidArmorLayer 路径)不受影响。
+     *
+     * @param stack 物品
+     * @return true = Hazen'N Stuff 物品
+     */
+    private static boolean isHazenNamespace(ItemStack stack) {
+        ResourceLocation id = BuiltInRegistries.ITEM.getKey(stack.getItem());
+        return id != null && "hazennstuff".equals(id.getNamespace());
+    }
 
     /** 描边时 BEWLR 模型对象 + 来源模组的预变换类别 + 本体纹理(用于颜色混合,可为 null)。 */
     private record BewlrModel(Object model, int preTransform, ResourceLocation texture) {
@@ -1777,51 +1945,6 @@ public final class OutlineRenderer {
         return Map.copyOf(m);
     }
 
-    /** Hazen'N Stuff 武器<b>精确适配表</b>(基于 Hazen'N Stuff 模组实际字段):
-     * 物品注册 ID → 模型静态字段名。
-     * <p>
-     * Hazen'N Stuff 武器字段名<b>不遵循</b>通用的 {@code <物品 ID 大写>_MODEL} 约定，
-     * 需要显式映射。例如：
-     * <ul>
-     *   <li>{@code wrath_of_the_desert} = {@code WRATH_OF_DESERT_MODEL}(去掉 _THE_);</li>
-     *   <li>{@code wrath_of_the_desert_weapon} = {@code WRATH_OF_DESERT_MODEL};</li>
-     *   <li>{@code wrath_weapon} = {@code WRATH_MODEL}(星怒武器);</li>
-     *   <li>{@code wrath} = {@code WRATH_MODEL}(星怒最简版)。</li>
-     * </ul>
-     */
-    private static final Map<String, String> HAZEN_WEAPON_FIELD_MAP = buildHazenWeaponFieldMap();
-
-    /** 构建 {@link #HAZEN_WEAPON_FIELD_MAP}(Hazen'N Stuff 武器字段映射)。 */
-    private static Map<String, String> buildHazenWeaponFieldMap() {
-        return Map.of(
-            "hazenn:wrath_of_the_desert", "WRATH_OF_DESERT_MODEL",      // 愤怒：荒漠之怒 (去掉 _THE_)
-            "hazenn:wrath_of_the_desert_weapon", "WRATH_OF_DESERT_MODEL", // 愤怒：荒漠之怒 (完整版)
-            "hazenn:wrath_weapon", "WRATH_MODEL",                        // 愤怒：星怒 (简化版)
-            "hazenn:wrath", "WRATH_MODEL"                                // 愤怒：星怒 (最简版)
-        );
-    }
-
-    /**
-     * ⚠️ Spore(真菌感染)BEWLR 武器<b>精确适配表</b>
-     * 物品注册 ID → 模型字段名。Spore 的模型字段名不遵循通用的 {@code <物品 ID 大写>_MODEL}
-     * 约定，需要显式映射。字段命名规则：物品路径的小写形式 + "_MODEL"(无换行/无额外字符)。
-     * <p>
-     * 若字段不匹配，后果：Spore 武器/盔甲<b>描边完全缺失</b>。
-     */
-    private static final Map<String, String> SPORE_WEAPON_FIELD_MAP = buildSporeWeaponFieldMap();
-
-    /** 构建 {@link #SPORE_WEAPON_FIELD_MAP}(Spore 武器字段映射)。 */
-    private static Map<String, String> buildSporeWeaponFieldMap() {
-        return Map.of(
-            // Spore 真菌感染武器 (基于 SItemProperties 静态字段实测)
-            "spore:spore_sword", "SporeSword_MODEL",
-            "spore:spore_spear", "SporeSpear_MODEL",
-            "spore:spore_bow", "SporeBow_MODEL",
-            "spore:coral_sword", "CoralSword_MODEL",
-            "spore:coral_spear", "CoralSpear_MODEL"
-        );
-    }
-
     /**
      * BEWLR 手持物品 3D 描边(月弧长枪/灾变武器等):
      * 本体手持由模组 BEWLR 渲染自定义实体模型,这里反射其持有的模型对象做放大壳。
@@ -1840,14 +1963,96 @@ public final class OutlineRenderer {
      * @return true = 已绘制描边
      */
     public boolean renderBewlrEntityOutline(ItemStack stack, PoseStack pose, int color, float thickness) {
+        return renderBewlrEntityOutline(stack, pose, ItemDisplayContext.NONE, color, thickness);
+    }
+
+    /**
+     * BEWLR 手持物品 3D 描边(月弧长枪/灾变武器等):带显示上下文版本。
+     * <p>
+     * 与 {@link #renderBewlrEntityOutline(ItemStack, PoseStack, int, float)} 相同,
+     * 额外接收 {@link ItemDisplayContext} 供<b>渲染捕获兜底</b>
+     * ({@link #renderBewlrCapturedOutline})使用——反射/Geo 全部拿不到模型时,直接调用
+     * 模组自己的 {@code IClientItemExtensions.getCustomRenderer().renderByItem},把写出的
+     * 顶点捕获进内存,绕 AABB 中心放大画描边壳(通用模型获取算法的实际落地)。
+     *
+     * @param stack     物品(BEWLR)
+     * @param pose      已复刻 display transform 的 PoseStack(与本体同变换)
+     * @param context   当前显示上下文(GUI/手持/GROUND/FIXED;捕获需与本体同 context)
+     * @param color     描边 ARGB
+     * @param thickness 描边厚度(像素语义)
+     * @return true = 已绘制描边
+     */
+    public boolean renderBewlrEntityOutline(ItemStack stack, PoseStack pose, ItemDisplayContext context,
+                                            int color, float thickness) {
         if (thickness <= 0f || this.outlineShader == null) {
             return false;
         }
+        // ⚠️ TACZ 专项兼容(2026-09-06 重启用):TACZ 枪械是自绘 Bedrock 渲染器
+        // (GunItemRendererWrapper,标准 BEWLR),几何不在 BakedModel 里。恢复描边后按
+        // 通用 BEWLR 路径处理 —— 命中静态字段适配先走(Lionfish/Geo 等),全部拿不到
+        // 时走 {@link #renderBewlrCapturedOutline} 调用 renderByItem 捕获顶点。
+        // 早期因"手持第一人称捕获错位且无上下文"整体停用;现按 Config.ENABLE_TACZ_COMPAT
+        // (默认开启)恢复。若某个版本/姿态仍错位,玩家可关闭该开关回到"无描边"。
+        // Hazen'N Stuff 通过 Config.ENABLE_HAZEN_COMPAT(默认开启)启用全武器兼容。
+        boolean hazen = isHazenNamespace(stack);
+        boolean tacz = isTaczNamespace(stack);
+        if ((tacz && !Config.ENABLE_TACZ_COMPAT.get())
+                || (hazen && !Config.ENABLE_HAZEN_COMPAT.get())) {
+            return false;
+        }
+        // ⚠️ TACZ 第一人称骨骼动画受渲染器内部相机/动画状态驱动,本注入点(HEAD)
+        // 拿不到当前姿态的骨变化 → 无论捕获还是模型都必错位,明确不描边
+        // (宁可无描边,不渲染错位/巨大壳)。
+        if (tacz && context.firstPerson()) {
+            return false;
+        }
+        // ⚠️ TACZ 专项优先【直接走 TACZ 自身模型描边】(v0.1.9+):
+        // 用 TACZ 自己的 Bedrock 模型实现骨骼变换,逐 cube 绕自身中心放大后以描边
+        // RenderType 渲染 —— 姿态/坐姿/动画与本体百分百贴合,不再是"捕获顶点再放大"
+        // (后者因捕获坐标空间不对而错位)。失败(拿不到模型/无 cube)再回退通用捕获。
+        if (tacz) {
+            if (renderTaczBedrockModel(stack, pose, color, thickness)) {
+                return true;
+            }
+        }
         BewlrModel found = findBewlrModel(stack);
         if (found == null || found.model() == null) {
-            // 未命中永恒星光/灾变等静态字段适配 → 尝试 GeckoLib / AzureLib 物品
-            // (AzItemRenderer / GeoItemRenderer 的模型走 registry,非静态字段)
-            return renderGeoItemOutline(stack, pose, color, thickness);
+            // ⚠️ Hazen 全武器兼容(Config.ENABLE_HAZEN_COMPAT):其武器多为 GeckoLib GeoItem,
+            // 所有 context 一律先走 Geo 贴图取样(形状由本体贴图 alpha 决定,扁平 quad
+            // 不会膨胀成整块平面),失败再回退捕获兜底(任意 BEWLR/自绘模型)。
+            if (hazen) {
+                if (renderGeoItemOutline(stack, pose, color, thickness)) {
+                    return true;
+                }
+                return renderBewlrCapturedOutline(stack, pose, context, color, thickness);
+            }
+            // 未命中永恒星光/灾变等静态字段适配。GUI/FIXED/GROUND 下本体就是模组渲染器
+            // renderByItem 按该 context 画的 → 捕获同姿态顶点最贴合(通用模型获取算法);
+            // 捕获失败再回退 Geo(部分模组 Geo 模型可直接反射)。手持先 Geo 快路径、
+            // 失败捕获兜底。
+            if (context == ItemDisplayContext.GUI || context == ItemDisplayContext.FIXED
+                    || context == ItemDisplayContext.GROUND) {
+                if (renderBewlrCapturedOutline(stack, pose, context, color, thickness)) {
+                    return true;
+                }
+                if (renderGeoItemOutline(stack, pose, color, thickness)) {
+                    return true;
+                }
+                return false;
+            }
+            // 手持(第一/第三人称):先试 Geo 骨骼(快),失败捕获兜底。
+            if (renderGeoItemOutline(stack, pose, color, thickness)) {
+                return true;
+            }
+            // ⚠️ TACZ 手持第一人称专项:枪械渲染器 renderFirstPersonInner 在 display
+            // 之后会套一层依赖相机/玩家动画的预变换,Hill InHandRenderer HEAD 捕获到的
+            // 顶点被抬高到相机空间 → 绕 AABB 放大后画出"天上巨大枪模、本体无描边"的
+            // 错乱壳。GUI/FIXED/GROUND 无该变换、捕获贴合,保留;第一/第三人称对 TACZ
+            // 一律放弃捕获(宁可无描边,不渲染错位/巨大壳)。
+            if (isTaczNamespace(stack) && context.firstPerson()) {
+                return false;
+            }
+            return renderBewlrCapturedOutline(stack, pose, context, color, thickness);
         }
         Object model = found.model();
         // ⚠️ 复刻 BEWLR 渲染器内部的模组级预变换(本体在 display 后 pushPose→translate→scale
@@ -1880,10 +2085,14 @@ public final class OutlineRenderer {
                     return true;
                 }
             }
-            return renderLionfishInflated(pose, model, tex, color, thickness);
+            if (renderLionfishInflated(pose, model, tex, color, thickness)) {
+                return true;
+            }
         } finally {
             pose.popPose();
         }
+        // Lionfish 反射失败(无 quads)兜底:同样走渲染捕获
+        return renderBewlrCapturedOutline(stack, pose, context, color, thickness);
     }
 
     /**
@@ -1909,19 +2118,482 @@ public final class OutlineRenderer {
 
     /**
      * 通过通用模型方式获取BEWLR物品模型（新实现）。
-     * 
-     * @param stack 物品栈
-     * @return BakedModel 实例，如果获取失败返回null
+     * <p>
+     * 通用模型获取算法(渲染捕获)的核心:对<b>任何</b>摸不到模型对象的 BEWLR
+     * (TACZ 自绘 Bedrock / GeckoLib GeoItem / AzureLib / 未来任意模组),不反射其内部
+     * 字段,而是调用 MC 的唯一 BEWLR 出口 —— {@code IClientItemExtensions.getCustomRenderer()}
+     * 的 {@code renderByItem} —— 并把 MultiBufferSource 换成 {@link CaptureSource}
+     * 拦截写出的顶点流。
+     * <p>
+     * 捕获时<b>复制当前描边 pose</b>(本体 ItemRenderer.render 就是在同一 pose 链下调
+     * renderByItem):渲染器内部把模型局部顶点经自己的预变换与传入 pose 变换后写出,
+     * 捕获到的顶点 = 本体最终绘制位置(含模组内部动画/预变换/display),因此描边零字段
+     * 映射即可与本体 100% 重合。
+     *
+     * @param stack   物品栈
+     * @param pose    当前描边 pose(本体 renderByItem 的同款矩阵链)
+     * @param context 当前显示上下文(渲染器按它选姿态/分支)
+     * @return 捕获到的顶点流(xyz 交错,最终绘制坐标);拿不到返回 null
      */
-    private BakedModel getUniversalBewlrModel(ItemStack stack) {
-        // 返回null来避免编译错误，但保留此函数作为接口存根
-        // 实际实现将在后续版本中完成，作为对通用模型适配的核心
-        return null;
+    private float[] captureBewlrGeometry(ItemStack stack, PoseStack pose, ItemDisplayContext context) {
+        try {
+            BlockEntityWithoutLevelRenderer bewlr = resolveBewlrRenderer(stack);
+            if (bewlr == null) {
+                return null;
+            }
+            // 复制当前 pose 矩阵(本体 renderByItem 同款)。渲染器需要 PushPose/PopPose
+            // 环境,给它一个全新 PoseStack 但初始矩阵 = 当前 pose。
+            PoseStack capturePose = new PoseStack();
+            capturePose.last().pose().set(pose.last().pose());
+            CaptureSource cap = new CaptureSource();
+            bewlr.renderByItem(stack, context, capturePose, cap,
+                    FULL_BRIGHT, OverlayTexture.NO_OVERLAY);
+            return cap.finish();
+        } catch (Throwable ignored) {
+            // 捕获失败(渲染器强依赖上下文/类型不匹配等):返回 null,由调用方回退 Geo 或跳过
+            return null;
+        }
+    }
+
+    /**
+     * 通用 BEWLR 渲染器解析:按 MC 两条标准注册通路拿渲染器(不反射模组内部字段):
+     * <ol>
+     *   <li>{@code IClientItemExtensions.of(stack).getCustomRenderer()} —— 大多数 BEWLR
+     *       (TACZ GunItemRendererWrapper、灾变 CMItemstackRenderer、永恒星光等);</li>
+     *   <li>GeckoLib GeoItem —— 不暴露 custom renderer,但 {@code GeoRenderProvider
+     *       .of(item).getGeoItemRenderer()} 返回其 GeoItemRenderer(本身 extends
+     *       BlockEntityWithoutLevelRenderer);Hazen 星怒(StarfuryItem implements
+     *       GeoItem)走此路。</li>
+     * </ol>
+     * 两条都不中返回 null(非 BEWLR/无渲染器),调用方跳过。
+     */
+    private BlockEntityWithoutLevelRenderer resolveBewlrRenderer(ItemStack stack) {
+        // 通路 1:IClientItemExtensions(TACZ/灾变/永恒星光/普通 BEWLR)
+        try {
+            IClientItemExtensions ext = IClientItemExtensions.of(stack);
+            if (ext != null) {
+                BlockEntityWithoutLevelRenderer r = ext.getCustomRenderer();
+                if (r != null) {
+                    return r;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        // 通路 2:GeckoLib GeoItem(GeoRenderProvider.getGeoItemRenderer)
+        try {
+            Item item = stack.getItem();
+            Class<?> providerClass = Class.forName("software.bernie.geckolib.animatable.client.GeoRenderProvider");
+            Method of = findMethod(providerClass, "of", Item.class);
+            if (of == null) {
+                return null;
+            }
+            of.setAccessible(true);
+            Object provider = of.invoke(null, item);
+            if (provider == null) {
+                return null;
+            }
+            Method getRenderer = null;
+            for (Method m : provider.getClass().getMethods()) {
+                if (m.getName().equals("getGeoItemRenderer")) {
+                    getRenderer = m;
+                    break;
+                }
+            }
+            if (getRenderer == null) {
+                return null;
+            }
+            getRenderer.setAccessible(true);
+            Object r = getRenderer.invoke(provider);
+            return r instanceof BlockEntityWithoutLevelRenderer bewlr ? bewlr : null;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /**
+     * 捕获渲染的 MultiBufferSource:按 RenderType 缓存<b>独立</b> {@link CaptureVertexConsumer}
+     * (与真实 {@code BufferSource} 语义一致),丢弃纹理/状态,只收集 addVertex 位置;
+     * endBatch 为空操作(绝不上屏)。
+     * <p>
+     * ⚠️ 必须按 RenderType 区分 consumer(2026-09-06 星怒 GUI "Duplicate delegates"
+     * 崩溃根因):模组渲染器内部可能用 {@code VertexMultiConsumer} 组合多个 buffer
+     * (主渲染 + 附魔层),若 {@link #getBuffer} 对所有 RenderType 返回<b>同一个实例</b>,
+     * 组合器检测到重复 delegate 抛 {@link IllegalArgumentException}。每个 RenderType
+     * 独立实例(即使它们指向同一块捕获数组)即可规避;渲染器把同一条顶点写入主+附魔
+     * 两个 buffer 会重复计数,但对 AABB/壳描边无影响(重复顶点放大后重叠,视觉不变)。
+     * <p>
+     * ⚠️ 只支持 {@link VertexFormat.Mode#QUADS}(每 4 顶点一个 quad)流:
+     * {@link #renderBewlrCapturedOutline} 按 12 个 float 一组重建 quad,若渲染器以
+     * TRIANGLES(每 3 顶点)等模式输出,分组会错乱成畸形几何。捕获时检测到非 QUADS
+     * 的 RenderType 即整体放弃(返回 null)——宁可无描边,不错位渲染(与 TACZ
+     * 停用同原则)。
+     */
+    private static final class CaptureSource implements MultiBufferSource {
+        /** 所有 RenderType 共享的顶点池:每 (RenderType → consumer) 独立记录,finish 汇总。 */
+        private final java.util.IdentityHashMap<RenderType, CaptureVertexConsumer> consumers =
+                new java.util.IdentityHashMap<>();
+        /** false = 捕获流中出现非 QUADS 的 RenderType,放弃本次捕获。 */
+        private boolean quadsOnly = true;
+
+        @Override
+        public VertexConsumer getBuffer(RenderType renderType) {
+            if (renderType.mode() != VertexFormat.Mode.QUADS) {
+                this.quadsOnly = false;
+            }
+            // 同一 RenderType 返回同一实例(渲染器会对同一 RT 连续写入);
+            // 不同 RenderType 返回不同实例 → VertexMultiConsumer 不判重。
+            return this.consumers.computeIfAbsent(renderType, rt -> new CaptureVertexConsumer());
+        }
+
+        /** 返回汇总的顶点流(xyz 交错);无顶点或流非 QUADS 返回 null。 */
+        float[] finish() {
+            if (!this.quadsOnly) {
+                return null;
+            }
+            // 先算总长,一次性分配;各 consumer 顶点顺序无关紧要(只做 AABB/壳)。
+            int total = 0;
+            for (CaptureVertexConsumer c : this.consumers.values()) {
+                total += c.count;
+            }
+            if (total == 0) {
+                return null;
+            }
+            float[] merged = new float[total];
+            int off = 0;
+            for (CaptureVertexConsumer c : this.consumers.values()) {
+                System.arraycopy(c.buf, 0, merged, off, c.count);
+                off += c.count;
+            }
+            return merged;
+        }
+    }
+
+    /**
+     * 捕获用 VertexConsumer:只记录 addVertex(x,y,z) 位置(顶点数上限保护),
+     * 其余 setColor/setUv/setUv1/setUv2/setNormal 一律忽略。
+     */
+    private static final class CaptureVertexConsumer implements VertexConsumer {
+        /** 顶点数上限(约 30k 顶点 = 7.5k quad,防止失控放大壳)。 */
+        private static final int MAX_FLOATS = 65536 * 3 * 4;
+
+        private float[] buf = new float[1024 * 3];
+        private int count = 0; // 已写 float 数(= 顶点数×3)
+
+        @Override
+        public VertexConsumer addVertex(float x, float y, float z) {
+            if (count >= MAX_FLOATS) {
+                return this; // 超限:忽略后续顶点
+            }
+            if (count + 3 > buf.length) {
+                buf = java.util.Arrays.copyOf(buf, Math.min(buf.length * 2, MAX_FLOATS));
+            }
+            if (count + 3 <= buf.length) {
+                buf[count++] = x;
+                buf[count++] = y;
+                buf[count++] = z;
+            }
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setColor(int r, int g, int b, int a) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv(float u, float v) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv1(int u, int v) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv2(int u, int v) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setNormal(float x, float y, float z) {
+            return this;
+        }
+    }
+
+    /**
+     * 渲染捕获几何的描边壳(通用 BEWLR 兜底)。
+     * <p>
+     * 捕获顶点已是<b>最终绘制坐标</b>(含 pose 与渲染器内部预变换),因此描边不再叠加
+     * 任何外层变换,直接绕这些坐标做外扩绘质。采用与 {@code prepareExpand/
+     * renderVertexNormalExpand} 同构的<b>顶点法线平均外扩</b>:每个共享顶点沿相邻面
+     * 法线平均值(归一化)方向平移一个固定距离 → 形状贴合、厚度均匀、端部不鼓胀。
+     * 外扩距离 = thickness × THICKNESS_SCALE × bewlrInflatePerThickness() × 物体
+     * 半跨度(随物体尺寸成比例,跨 GUI/世界坐标空间一致)。
+     *
+     * @param stack     物品(BEWLR)
+     * @param pose      当前描边 pose(用于捕获;描边本体坐标已含其变换,不再叠加)
+     * @param context   当前显示上下文
+     * @param color     描边 ARGB
+     * @param thickness 描边厚度量(像素语义)
+     * @return true = 捕获到几何并已绘制;false = 非 BEWLR / 捕获失败 / 无顶点
+     */
+    private boolean renderBewlrCapturedOutline(ItemStack stack, PoseStack pose, ItemDisplayContext context,
+                                               int color, float thickness) {
+        if (thickness <= 0f || this.outlineShader == null) {
+            return false;
+        }
+        float[] verts = captureBewlrGeometry(stack, pose, context);
+        if (verts == null || verts.length < 12) {
+            return false; // 无几何或不足 1 个 quad
+        }
+        // 计算全局 AABB 中心(最终绘制坐标)
+        float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, minZ = Float.MAX_VALUE;
+        float maxX = -Float.MAX_VALUE, maxY = -Float.MAX_VALUE, maxZ = -Float.MAX_VALUE;
+        for (int i = 0; i < verts.length; i += 3) {
+            float x = verts[i], y = verts[i + 1], z = verts[i + 2];
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+            if (z < minZ) minZ = z;
+            if (z > maxZ) maxZ = z;
+        }
+        if (maxX - minX < 1e-6f && maxY - minY < 1e-6f && maxZ - minZ < 1e-6f) {
+            return false; // 退化
+        }
+        // ⚠️ 捕获尺寸守卫:某些自绘 BEWLR(如 TACZ 第一人称)在显示变换后套了
+        // 相机/动画预变换,捕获顶点被抬到相机/世界空间 → AABB 尺寸异常大。
+        // 绕这种中心放大只会画出"天上巨大模型、本体无描边"的错乱壳。任一轴
+        // 跨度超过阈值(模型单位,正常手持/GUI 物品远小于此)即视为捕获失败,
+        // 直接跳过该次描边(宁可无描边,不渲染错位巨壳)。
+        if (maxX - minX > CAPTURE_MAX_SPAN
+                || maxY - minY > CAPTURE_MAX_SPAN
+                || maxZ - minZ > CAPTURE_MAX_SPAN) {
+            return false;
+        }
+        setOutlineAlphaBoost(2.0f);
+        int packedColor = 0xFF000000 | (color & 0xFFFFFF);
+        VertexConsumer consumer = outlineBuffers.getBuffer(geoOutlineRenderType(color));
+        // CaptureSource 只接受 QUADS 流且每 consumer 写满整 quad → 长度必为 12 的倍数;
+        // 尾数不足一个 quad 时丢弃(防御)。
+        int quads = verts.length / 12;
+
+        // pass 1:按共享顶点(精确 float 位置)累加相邻面法线(与 prepareExpand 同构)。
+        // 每个 quad 取前 3 顶点叉积得单位面法线,加到该 quad 全部 4 顶点的法线和里。
+        Map<Position, Vector3f> normals = new HashMap<>();
+        for (int q = 0; q < quads; q++) {
+            int b = q * 12;
+            float ax = verts[b], ay = verts[b + 1], az = verts[b + 2];
+            float bx = verts[b + 3], by = verts[b + 4], bz = verts[b + 5];
+            float ucx = verts[b + 6], ucy = verts[b + 7], ucz = verts[b + 8];
+            float ux = bx - ax, uy = by - ay, uz = bz - az;
+            float vx = ucx - ax, vy = ucy - ay, vz = ucz - az;
+            float fnx = uy * vz - uz * vy;
+            float fny = uz * vx - ux * vz;
+            float fnz = ux * vy - uy * vx;
+            float inv = 1.0f / (float) Math.sqrt(fnx * fnx + fny * fny + fnz * fnz);
+            if (!Float.isFinite(inv)) {
+                continue; // 退化面(三点共线)
+            }
+            fnx *= inv; fny *= inv; fnz *= inv;
+            for (int v = 0; v < 4; v++) {
+                int it = b + v * 3;
+                normals.computeIfAbsent(new Position(verts[it], verts[it + 1], verts[it + 2]),
+                        k -> new Vector3f()).add(fnx, fny, fnz);
+            }
+        }
+        // 归一化每个顶点的平均法线(零和跳过 → 该顶点不外扩)
+        for (Vector3f n : normals.values()) {
+            if (n.lengthSquared() > 1e-6f) {
+                n.normalize();
+            } else {
+                n.set(0.0f, 0.0f, 0.0f);
+            }
+        }
+        // ⚠️ 法线外扩距离:随物体尺寸成比例(取包围盒最大半跨度),使不同尺寸/坐标空间
+        // 的物品描边像素宽度一致 —— 替代旧的 AABB 中心倍率放大(端部鼓胀、易错位)。
+        float maxSpan = Math.max(maxX - minX, Math.max(maxY - minY, maxZ - minZ));
+        float offset = thickness * THICKNESS_SCALE * bewlrInflatePerThickness() * maxSpan * 0.5f;
+        for (int q = 0; q < quads; q++) {
+            int b = q * 12;
+            for (int v = 0; v < 4; v++) {
+                int i = b + v * 3;
+                Vector3f dir = normals.get(new Position(verts[i], verts[i + 1], verts[i + 2]));
+                float x = verts[i] + (dir != null ? dir.x() * offset : 0.0f);
+                float y = verts[i + 1] + (dir != null ? dir.y() * offset : 0.0f);
+                float z = verts[i + 2] + (dir != null ? dir.z() * offset : 0.0f);
+                consumer.addVertex(x, y, z, packedColor, 0.0f, 0.0f,
+                        OverlayTexture.NO_OVERLAY, FULL_BRIGHT, 0.0f, 1.0f, 0.0f);
+            }
+        }
+        outlineBuffers.endBatch();
+        return true;
+    }
+
+    /**
+     * TACZ 专用描边:直接渲染 TACZ 自己的 Bedrock 模型外扩壳。
+     * <p>
+     * 区别于捕获路径:这里<b>不读取任何最终坐标</b>,而是拿到 TACZ 渲染器持有的
+     * Bedrock 模型,用 TACZ 自己公开的 {@code BedrockPart.translateAndRotateAndScale}
+     * 复刻本体骨骼变换链(放炮、坐姿、动画全由 TACZ 决定),再对每个
+     * {@code BedrockCubeBox} 绕自身包围盒中心放大(fedPose1+δ)后 compile 到描边
+     * RenderType —— 形状/位置/姿态都与本体完全一致,不再有"捕获坐标落入相机空间"
+     * 导致的地面/空中错位问题。
+     * <p>
+     * 全程反射访问(<b>不引入对 TACZ 的编译期依赖</b>,镜像中无 TAC 也能安全加载);
+     * 拿不到模型/无骨骼/任何反射异常都返回 false,由调用方回退通用路径。
+     *
+     * @param stack     TACZ 枪械
+     * @param pose      已复刻 display 变换的 PoseStack(与本体同变换)
+     * @param color     描边 ARGB
+     * @param thickness 描边厚度(像素语义)
+     * @return true = 已绘制
+     */
+    private boolean renderTaczBedrockModel(ItemStack stack, PoseStack pose, int color, float thickness) {
+        Object renderer = resolveBewlrRenderer(stack);
+        if (renderer == null) {
+            return false;
+        }
+        try {
+            // GunItemRendererWrapper.getModel(ItemStack) → 当前枪的 BedrockGunModel
+            Object model = renderer.getClass().getMethod("getModel", ItemStack.class).invoke(renderer, stack);
+            if (model == null) {
+                return false;
+            }
+            java.lang.reflect.Method getShouldRender = model.getClass().getMethod("getShouldRender");
+            Object rootObj = getShouldRender.invoke(model);
+            if (!(rootObj instanceof java.util.List<?> roots) || roots.isEmpty()) {
+                return false;
+            }
+            setOutlineAlphaBoost(2.0f);
+            int packed = 0xFF000000 | (color & 0xFFFFFF);
+            float cr = ((packed >> 16) & 0xFF) / 255f;
+            float cg = ((packed >> 8) & 0xFF) / 255f;
+            float cb = (packed & 0xFF) / 255f;
+            float perCube = 1.0f + thickness * THICKNESS_SCALE * bewlrInflatePerThickness();
+            VertexConsumer consumer = outlineBuffers.getBuffer(geoOutlineRenderType(color));
+            pose.pushPose();
+            int drawn = 0;
+            try {
+                for (Object part : roots) {
+                    drawn += emitTaczPart(part, pose, consumer, perCube, cr, cg, cb);
+                }
+            } finally {
+                pose.popPose();
+            }
+            outlineBuffers.endBatch();
+            return drawn > 0;
+        } catch (Throwable ignored) {
+            // 反射/遍历异常:兜底 flush,避免残留几何漂到下一帧
+            try {
+                outlineBuffers.endBatch();
+            } catch (Throwable ignored2) {
+            }
+            return false;
+        }
+    }
+
+    /**
+     * 递归发射一个 TACZ BedrockPart 的外扩 shell:先 apply
+     * {@code BedrockPart.translateAndRotateAndScale(pose)}(与本体同骨骼变换),
+     * 再对每个 {@code BedrockCubeBox} 绕自身中心放大后 compile,最后递归子部件。
+     *
+     * @return 已发射的 cube 数量(为 0 表示失败/空,便于调用方回退)
+     */
+    private int emitTaczPart(Object part, PoseStack pose, VertexConsumer consumer,
+                             float cubeScale, float cr, float cg, float cb) {
+        Class<?> pc = part.getClass();
+        try {
+            if (! ((Boolean) pc.getField("visible").get(part))) {
+                return 0;
+            }
+        } catch (Throwable ignored) {
+        }
+        pose.pushPose();
+        int drawn = 0;
+        try {
+            try {
+                pc.getMethod("translateAndRotateAndScale", PoseStack.class).invoke(part, pose);
+            } catch (Throwable ignored) {
+                return drawn; // 骨骼变换失败 → 该部件无几何
+            }
+            Object cubes = null;
+            Object children = null;
+            try {
+                cubes = pc.getField("cubes").get(part);
+                children = pc.getField("children").get(part);
+            } catch (Throwable ignored) {
+            }
+            if (cubes instanceof Iterable<?> ci) {
+                for (Object cube : ci) {
+                    try {
+                        if (emitCube(cube, pose, consumer, cubeScale, cr, cg, cb)) {
+                            drawn++;
+                        }
+                    } catch (Throwable ignored) {
+                    }
+                }
+            }
+            if (children instanceof Iterable<?> ki) {
+                for (Object child : ki) {
+                    drawn += emitTaczPart(child, pose, consumer, cubeScale, cr, cg, cb);
+                }
+            }
+        } finally {
+            pose.popPose();
+        }
+        return drawn;
+    }
+
+    /**
+     * 若 cube 是 {@code BedrockCubeBox}(有 minX..maxZ 包围盒):绕自身中心放大后 compile;
+     * 非 box(如 per-face)直接 compile。返回是否处理了一个几何体。
+     */
+    private boolean emitCube(Object cube, PoseStack pose, VertexConsumer consumer,
+                             float perScale, float cr, float cg, float cb) throws Throwable {
+        Class<?> cc = cube.getClass();
+        java.lang.reflect.Method compile = cc.getMethod("compile",
+                PoseStack.Pose.class, VertexConsumer.class, int.class, int.class,
+                float.class, float.class, float.class, float.class);
+        try {
+            cc.getField("minX"); // 只是测试是否 box(存在即走包围盒外扩)
+        } catch (NoSuchFieldException e) {
+            compile.invoke(cube, pose.last(), consumer, FULL_BRIGHT, OverlayTexture.NO_OVERLAY,
+                    cr, cg, cb, 1.0f);
+            return true;
+        }
+        java.lang.reflect.Field fMinX = cc.getField("minX");
+        java.lang.reflect.Field fMaxX = cc.getField("maxX");
+        java.lang.reflect.Field fMinY = cc.getField("minY");
+        java.lang.reflect.Field fMaxY = cc.getField("maxY");
+        java.lang.reflect.Field fMinZ = cc.getField("minZ");
+        java.lang.reflect.Field fMaxZ = cc.getField("maxZ");
+        float minX = fMinX.getFloat(cube), maxX = fMaxX.getFloat(cube);
+        float minY = fMinY.getFloat(cube), maxY = fMaxY.getFloat(cube);
+        float minZ = fMinZ.getFloat(cube), maxZ = fMaxZ.getFloat(cube);
+        float cx = (minX + maxX) * 0.5f, cy = (minY + maxY) * 0.5f, cz = (minZ + maxZ) * 0.5f;
+        org.joml.Matrix4f orig = new org.joml.Matrix4f(pose.last().pose());
+        // T(c)·S(scale)·T(-c)——绕 cube 自身中心均匀放大(与 renderPartInflated 同思路)。
+        // 直接对 pose 矩阵 post-multiply(不改变 normal 矩阵,描边为 FULL_BRIGHT 全亮,无需光照)。
+        pose.last().pose().mul(new org.joml.Matrix4f()
+                .translation(cx, cy, cz)
+                .scale(perScale, perScale, perScale)
+                .translation(-cx, -cy, -cz));
+        compile.invoke(cube, pose.last(), consumer, FULL_BRIGHT, OverlayTexture.NO_OVERLAY,
+                cr, cg, cb, 1.0f);
+        pose.last().pose().set(orig);
+        return true;
     }
 
     /** 反射读取 BEWLR 模型 + 来源模组的预变换类别。 */
     private BewlrModel findBewlrModel(ItemStack stack) {
-        String path = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+        // ⚠️ 字段名映射表({@link #CATACLYSM_WEAPON_SPECS} 与通用约定)都以<b>纯路径</b>
+        // (无命名空间)为 key —— 曾误用 toString()(带命名空间,如 cataclysm:coral_spear)
+        // 导致灾变精确映射恒 miss、通用兜底字段名含冒号永远找不到 → 灾变/永恒星光
+        // BEWLR 描边整体失效(2026-09-06 回归,git c108d19 引入)。命名空间层面的排除
+        // (TACZ)已在 {@link #renderBewlrEntityOutline} 顶部完成,这里只取 path。
+        String path = BuiltInRegistries.ITEM.getKey(stack.getItem()).getPath();
         BewlrModel found = readBewlrModelField(path);
         if (found == null) {
             // 永恒星光等模组延迟初始化模型字段:触发一次 BEWLR 渲染使其创建
@@ -1933,7 +2605,7 @@ public final class OutlineRenderer {
 
     /**
      * 遍历 {@link #BEWLR_MODEL_HOLDER_CLASSES},沿父类链反射读静态字段
-     * (模型 + 预变换类别 + 本体纹理)。字段名解析(按物品注册 ID):
+     * (模型 + 预变换类别 + 本体纹理)。字段名解析(按物品注册 ID 的<b>纯路径</b>):
      * <ol>
      *   <li>先查灾变精确映射表 {@link #CATACLYSM_WEAPON_SPECS}(字段名缩写/缺后缀/
      *       预变换差异,见该表注释);</li>
@@ -1941,44 +2613,25 @@ public final class OutlineRenderer {
      * </ol>
      * 纹理字段同理(映射表显式指定;或通用 = 字段名把 "_MODEL" 换 "_TEXTURE" 查持有类,
      * 回退模型类 TEXTURE,如永恒星光 CrescentSpearModel.TEXTURE)。
+     *
+     * @param itemPath 物品注册 ID 的纯路径(无命名空间),如 coral_spear
      */
     private BewlrModel readBewlrModelField(String itemPath) {
-        // 灾变精确映射表(字段名/纹理名/预变换均与 renderByItem 字节码一致)
-        // 跳过 TACZ 物品：TACZ 走 Geo 路径，不应进入 BEWLR 反射逻辑
-        if (itemPath.contains(":tac/") || itemPath.contains(":thearsenalcollection/")) {
-            return null;
-        }
-        // 先查灾变精确映射表
+        // 先查灾变精确映射表(字段名/纹理名/预变换均与 renderByItem 字节码一致)。
+        // TACZ 的命名空间排除已在 renderBewlrEntityOutline 顶部完成,此处
+        // 只处理会命中静态字段适配的模组。
         CataclysmWeaponSpec cataclysmSpec = CATACLYSM_WEAPON_SPECS.get(itemPath);
-        // 再查 Spore 精确映射表
-        String sporeModelField = SPORE_WEAPON_FIELD_MAP.get(itemPath);
-        // 再查 Hazen 精确映射表
-        String hazenModelField = HAZEN_WEAPON_FIELD_MAP.get(itemPath);
-        
         String modelField;
         if (cataclysmSpec != null) {
             modelField = cataclysmSpec.modelField();
-        } else if (sporeModelField != null) {
-            modelField = sporeModelField;
-        } else if (hazenModelField != null) {
-            modelField = hazenModelField;
         } else {
-            // 通用约定：物品路径大写 + "_MODEL"
+            // 通用约定:物品路径大写 + "_MODEL"(输入已去命名空间,不会含冒号)
             modelField = itemPath.toUpperCase(Locale.ROOT).replace('-', '_').replace('.', '_') + "_MODEL";
         }
         for (String cls : BEWLR_MODEL_HOLDER_CLASSES) {
-            int preTransform;
-            if (cataclysmSpec != null) {
-                preTransform = cataclysmSpec.preTransform();
-            } else if (sporeModelField != null) {
-                // Spore: scale(1,-1,-1)
-                preTransform = BewlrModel.ES_FLIP;
-            } else if (cls.startsWith("cn.leolezury.hazennstuff")) {
-                // Hazen'N Stuff: scale(1,-1,-1)
-                preTransform = BewlrModel.ES_FLIP;
-            } else {
-                preTransform = holderPreTransform(cls);
-            }
+            int preTransform = cataclysmSpec != null
+                    ? cataclysmSpec.preTransform()
+                    : holderPreTransform(cls);
             try {
                 Class<?> c = Class.forName(cls);
                 Field f = findField(c, modelField);
@@ -2024,14 +2677,6 @@ public final class OutlineRenderer {
         }
         if (cls.startsWith("com.github.L_Ender.cataclysm")) {
             return BewlrModel.CM_CENTER_FLIP;
-        }
-        if (cls.startsWith("cn.leolezury.hazennstuff")) {
-            // Hazen'N Stuff: scale(1,-1,-1)
-            return BewlrModel.ES_FLIP;
-        }
-        if (cls.startsWith("com.Harbinger.Spore")) {
-            // 真菌感染 (Spore): scale(1,-1,-1)
-            return BewlrModel.ES_FLIP;
         }
         return BewlrModel.NONE;
     }
@@ -2510,7 +3155,10 @@ public final class OutlineRenderer {
             float px = ox + partFieldF(part, "rotationPointX");
             float py = oy + partFieldF(part, "rotationPointY");
             float pz = oz + partFieldF(part, "rotationPointZ");
-            Field cubesField = part.getClass().getDeclaredField("cubeList");
+            // ⚠️ 必须用沿父类链查找的 findField(与 renderLionfishPart 一致):运行时部件类
+            // 常是 BasicModelPart 子类(如 AdvancedModelBox),getDeclaredField 只查本类
+            // 会 NoSuchFieldException → 整个子树静默跳过(整体壳回退路径无描边)。
+            Field cubesField = findField(part.getClass(), "cubeList");
             cubesField.setAccessible(true);
             Object list = cubesField.get(part);
             if (list instanceof List<?> cubes) {
@@ -2529,7 +3177,7 @@ public final class OutlineRenderer {
                     }
                 }
             }
-            Field childrenField = part.getClass().getDeclaredField("childModels");
+            Field childrenField = findField(part.getClass(), "childModels");
             childrenField.setAccessible(true);
             Object children = childrenField.get(part);
             if (children instanceof List<?> childList) {
@@ -2904,6 +3552,16 @@ public final class OutlineRenderer {
      * @param color   描边 ARGB(混色关时用于烘焙形状纹理)
      */
     private RenderType armorOutlineRenderType(ResourceLocation texture, int color) {
+        // ⚠️ 全透明纹理回退(2026-08-31 Spore 盔甲"无描边"根因):真菌感染(Spore)的
+        // SporeBaseArmor.getArmorTexture 恒返回 spore:textures/entity/empty.png(全透明
+        // 32×32),原版 HumanoidArmorLayer 用它渲染(隐形),Spore 玩家盔甲本体实际由
+        // 自定义 CustomArmorLayer(部件渲染)绘制。描边若继续采样 empty 的 alpha → 壳整体
+        // 透明不可见。几何(renderPartInflated 逐 cube 放大壳)与纹理无关,只需把采样源
+        // 换成不透明的 WHITE_TEXTURE(alpha 全 1)→ 描边变为"纯几何实心壳"绕本体可见。
+        // 检测结果按纹理缓存,不重复读 PNG。
+        if (isFullyTransparent(texture)) {
+            texture = WHITE_TEXTURE;
+        }
         if (needVanillaShaderFallback()) {
             if (Config.ARMOR_PIXEL_COLOR_GLINT.get()) {
                 // 混色开:采样原纹理(alpha 遮罩 + 颜色混合)
@@ -2913,7 +3571,12 @@ public final class OutlineRenderer {
             ResourceLocation shapeTex = shapeTextureForLocation(texture, color);
             return worldEmissiveOutlineRenderType(shapeTex);
         }
-        // 自定义 shader:原纹理 + 描边 shader(alpha boost)
+        // 自定义 shader:原纹理 + 描边 shader(alpha boost)。
+        // ⚠️ 混色来源:盔甲描边若开混色(ARMOR_PIXEL_COLOR_GLINT),颜色应为
+        // "描边色 × 盔甲纹理色";不开则是纯描边色。fsh 按 OutlineBlend uniform
+        // 决定是否混入 texel.rgb —— 此前这里从未设置,默认 0 → 自定义 shader 下盔甲
+        // 恒渲染成纯色、<b>不遵循混色模式</b>(与光影 fallback 的 emissive 行为不一致)。
+        setOutlineBlend(Config.ARMOR_PIXEL_COLOR_GLINT.get() ? 1.0f : 0.0f);
         RenderType type = this.armorRenderTypes.get(texture);
         if (type == null) {
             type = RenderType.create("enchanted_outlines_armor",
@@ -2930,6 +3593,55 @@ public final class OutlineRenderer {
             this.armorRenderTypes.put(texture, type);
         }
         return type;
+    }
+
+    /**
+     * 检测纹理是否<b>完全透明</b>(PNG 无任何 alpha&gt;0 像素),结果按纹理缓存。
+     * <p>
+     * ⚠️ 与 {@link #shapeTextureForLocation} 一样用 JDK ImageIO 读取:palette+tRNS 等
+     * 格式交给 JDK 展开,不做像素级 alpha 猜测。读失败按"非透明"处理(宁可描边照旧,
+     * 也不因检测失败吞掉整件描边)。white.png(1×1 不透明)直接短路。
+     *
+     * @param texture 独立纹理(盔甲/鞘翅/投掷物/Geo 的采样源)
+     * @return true = 全透明,采样其 alpha 的描边壳不可见,应回退纯几何
+     */
+    private boolean isFullyTransparent(ResourceLocation texture) {
+        if (WHITE_TEXTURE.equals(texture)) {
+            return false;
+        }
+        Boolean cached = this.transparentTextureCache.get(texture);
+        if (cached != null) {
+            return cached;
+        }
+        boolean result;
+        try {
+            var resource = Minecraft.getInstance().getResourceManager().getResource(texture);
+            if (resource.isEmpty()) {
+                result = false; // 缺纹理:留给原路径(很可能 fallback 白色/失败保护)
+            } else {
+                try (InputStream in = resource.get().open()) {
+                    java.awt.image.BufferedImage bi = javax.imageio.ImageIO.read(in);
+                    if (bi == null) {
+                        result = false;
+                    } else {
+                        result = true; // 先假设全透明,发现任一不透明像素即翻转
+                        outer:
+                        for (int y = 0; y < bi.getHeight(); y++) {
+                            for (int x = 0; x < bi.getWidth(); x++) {
+                                if (((bi.getRGB(x, y) >>> 24) & 0xFF) > 0) {
+                                    result = false;
+                                    break outer;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            result = false;
+        }
+        this.transparentTextureCache.put(texture, result);
+        return result;
     }
 
     /**

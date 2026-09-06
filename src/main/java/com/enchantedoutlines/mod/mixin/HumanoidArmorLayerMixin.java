@@ -61,7 +61,11 @@ public abstract class HumanoidArmorLayerMixin {
         HumanoidModel baseModel = (HumanoidModel) ((HumanoidArmorLayer<?, ?, ?>) (Object) this).getParentModel();
         for (EquipmentSlot slot : ARMOR_SLOTS) {
             ItemStack stack = entity.getItemBySlot(slot);
-            if (stack.isEmpty() || !(stack.getItem() instanceof ArmorItem)) {
+            if (stack.isEmpty() || !(stack.getItem() instanceof ArmorItem armorItem)) {
+                continue;
+            }
+            // 与下方 12 参 renderArmorPiece HEAD 分支同款守卫:错槽(命令强穿)时不按错误槽位画壳
+            if (armorItem.getEquipmentSlot() != slot) {
                 continue;
             }
             if (!OutlineRenderer.INSTANCE.isGeckoLibArmor(stack)) {

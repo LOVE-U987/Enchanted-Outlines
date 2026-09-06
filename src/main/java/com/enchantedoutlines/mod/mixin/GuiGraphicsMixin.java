@@ -46,6 +46,23 @@ public abstract class GuiGraphicsMixin {
             at = @At("HEAD"))
     private void enchantedoutlines$renderOutline(LivingEntity entity, Level level, ItemStack stack,
                                                  int x, int y, int seed, int quadSize, CallbackInfo ci) {
+        // ⚠️ GUI 屏幕空间渲染标记(HEAD 设 true / RETURN 恢复 false):背包/容器/快捷栏等
+        // 物品图标是 2D 屏幕绘制,不经 Iris 光影 —— 期间 needVanillaShaderFallback() 必须
+        // 恒 false(自定义 shader),否则开光影时扁平/Geo/BEWLR 物品轮廓会错误 fallback 到
+        // 世界专用 emissive RenderType → 颜色变淡灰(2026-08-31 事故,方块走
+        // handOutlineRenderType 恒自定义不受影响,所以"物品灰、方块正常")。
+        OutlineRenderer.markGuiRender(true);
+        try {
+            GuiGraphics self = (GuiGraphics) (Object) this;
+            renderOutlineInner(self, entity, level, stack, x, y, seed, quadSize);
+        } catch (Throwable ignored) {
+            // 描边是附加效果,任何异常都静默忽略(同时保证不打断方法体 → RETURN 恢复 GUI 标记)
+        }
+    }
+
+    /** GUI 描边主体(异常由调用方兜底)。 */
+    private static void renderOutlineInner(GuiGraphics self, LivingEntity entity, Level level, ItemStack stack,
+                                           int x, int y, int seed, int quadSize) {
         if (stack.isEmpty() || entity == null || !Config.ENABLE.get()) {
             return;
         }
@@ -90,7 +107,6 @@ public abstract class GuiGraphicsMixin {
             // 模型,3D 放大壳套上去必然错位(2026-08-09 长枪背包错位根因)。
             BakedModel inventoryModel = OutlineRenderer.INSTANCE.inventoryModelFor(stack);
             if (inventoryModel == null) {
-                GuiGraphics self = (GuiGraphics) (Object) this;
                 PoseStack pose = self.pose();
                 pose.pushPose();
                 try {
@@ -99,7 +115,8 @@ public abstract class GuiGraphicsMixin {
                     pose.scale(16.0F, -16.0F, 16.0F);
                     model.getTransforms().getTransform(ItemDisplayContext.GUI).apply(false, pose);
                     pose.translate(-0.5F, -0.5F, -0.5F);
-                    if (!OutlineRenderer.INSTANCE.renderBewlrEntityOutline(stack, pose, color, thickness)) {
+                    if (!OutlineRenderer.INSTANCE.renderBewlrEntityOutline(
+                            stack, pose, ItemDisplayContext.GUI, color, thickness)) {
                         return;
                     }
                 } finally {
@@ -110,8 +127,15 @@ public abstract class GuiGraphicsMixin {
             model = inventoryModel;
         }
 
-        GuiGraphics self = (GuiGraphics) (Object) this;
         OutlineRenderer.INSTANCE.renderOutline(
                 self.pose(), model, x, y, quadSize, color, thickness);
+    }
+
+    /** 恢复 GUI 渲染标记(renderItem 方法体正常返回时)。 */
+    @Inject(method = "renderItem(Lnet/minecraft/world/entity/LivingEntity;Lnet/minecraft/world/level/Level;Lnet/minecraft/world/item/ItemStack;IIII)V",
+            at = @At("RETURN"))
+    private void enchantedoutlines$restoreGuiFlag(LivingEntity entity, Level level, ItemStack stack,
+                                                  int x, int y, int seed, int quadSize, CallbackInfo ci) {
+        OutlineRenderer.markGuiRender(false);
     }
 }

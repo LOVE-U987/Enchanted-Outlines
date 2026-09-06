@@ -110,7 +110,28 @@ public final class Config {
                     "false = 整体包围盒放大壳 (旧算法，细长武器端部外扩偏多)。")
             .define("bewlr3dPerCube", true);
 
-    // ==================== 新功能 (RPG 虹灯/TACZ 兼容/数据包颜色) ====================
+    /** 是否启用 Hazen'N Stuff 全武器兼容描边模式 (默认开启)。 */
+    public static final ModConfigSpec.BooleanValue ENABLE_HAZEN_COMPAT = BUILDER
+            .comment("Enable Hazen'N Stuff full-weapon outline compatibility (default true).",
+                    "Hazen'H Stuff (hazennstuff:) 全武器描边兼容模式:",
+                    "true = 对其 BEWLR/Geo 武器 (星怒等 GeckoLib 模型) 启用描边 —— 先走贴图 alpha",
+                    "采样轮廓 (形状由本体贴图决定, 扁平 quad 不会膨胀成整块平面), 拿不到再回退",
+                    "渲染捕获兜底, 覆盖任意模型类型的相关武器;",
+                    "false = 保持旧行为, 该物品武器一律不描边 (宁可无描边, 不渲染错位轮廓).",
+                    "普通扁平物品与 AzureLib 盔甲不受本开关影响。")
+            .define("enableHazenCompat", true);
+
+    /** 是否启用 TACZ(The Arsenal Collection Z) 枪械描边兼容模式 (默认开启)。 */
+    public static final ModConfigSpec.BooleanValue ENABLE_TACZ_COMPAT = BUILDER
+            .comment("Enable TACZ gun outline compatibility (default true).",
+                    "TACZ 枪械描边兼容模式:",
+                    "true = 对 TACZ 武器启用描边 —— GUI/背包/手持/掉落物等上下文走 BEWLR 渲染捕获兜底,",
+                    "绕捕获到的几何外扩一圈壳; 若某姿态下捕获出现错位可临时关闭此项。",
+                    "false = 保持旧行为, TACZ 物品一律不描边 (宁可无描边, 不渲染错位轮廓).",
+                    "普通扁平物品与 AzureLib 盔甲不受本开关影响。")
+            .define("enableTaczCompat", false);
+
+    // ==================== RPG 虹灯 ====================
 
     /** 是否启用 RPG 虹灯 (动态彩虹描边)——优先级最高。 */
     public static final ModConfigSpec.BooleanValue ENABLE_RPG_RAINBOW = BUILDER
@@ -119,30 +140,6 @@ public final class Config {
                     "true = 描边颜色随时间动态变化，形成彩虹效果 (优先级最高，覆盖所有其他颜色配置);",
                     "false = 使用正常颜色配置。")
             .define("enableRPGRainbow", false);
-
-    /** 是否启用 TACZ 专项兼容。 */
-    public static final ModConfigSpec.BooleanValue ENABLE_TACZ_COMPAT = BUILDER
-            .comment("Enable TACZ (The Arsenal Collection Z) compatibility.",
-                    "启用 TACZ 专项兼容:",
-                    "true = 启用 TACZ 模组的特殊渲染支持;",
-                    "false = 使用默认渲染。")
-            .define("enableTaczCompat", true);
-
-    /** 是否从数据包加载颜色配置。 */
-    public static final ModConfigSpec.BooleanValue ENABLE_DATAPACK_COLORS = BUILDER
-            .comment("Enable colors from data pack (assets/enchanted_outlines/color/pack.json).",
-                    "从数据包加载颜色配置:",
-                    "true = 加载数据包中的颜色配置 (优先级低于 RPG 虹灯，高于配置文件);",
-                    "false = 不使用数据包颜色。")
-            .define("enableDataPackColors", true);
-
-    /** 配置界面优化开关。 */
-    public static final ModConfigSpec.BooleanValue OPTIMIZE_CONFIG_UI = BUILDER
-            .comment("Optimize config UI layout and grouping.",
-                    "优化配置界面:",
-                    "true = 配置界面按功能分类显示;",
-                    "false = 使用默认线性布局。")
-            .define("optimizeConfigUi", true);
 
     // ==================== 颜色 ====================
 

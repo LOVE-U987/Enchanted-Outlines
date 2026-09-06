@@ -5,72 +5,47 @@
   "enchanted_outlines.config.scroll_hint": "滚动查看更多选项",
   "enchanted_outlines.config.value.on": "开启",
   "enchanted_outlines.config.value.off": "关闭",
-
   "enchanted_outlines.config.category.general": "通用",
   "enchanted_outlines.config.category.colors": "颜色",
-
   "enchanted_outlines.config.enable": "启用描边",
   "enchanted_outlines.config.enable.tooltip": "总开关。关闭后任何界面都不再渲染描边。",
-
   "enchanted_outlines.config.thickness": "物品描边厚度",
   "enchanted_outlines.config.thickness.tooltip": "物品（GUI/手持/投掷物）描边超出贴图的像素数，支持小数。设为 0 可关闭描边扩张。",
-
   "enchanted_outlines.config.armorThickness": "盔甲描边厚度",
   "enchanted_outlines.config.armorThickness.tooltip": "盔甲描边超出模型的像素数，支持小数。设为 0 可关闭盔甲描边扩张。",
-
   "enchanted_outlines.config.itemPixelColorGlint": "附魔光效混合物品颜色",
   "enchanted_outlines.config.itemPixelColorGlint.tooltip": "仅光影兼容模式生效：开启时描边色与物品贴图每个像素的颜色混合（扁平物品与 3D 物品均生效，保留物品轮廓形状，混合色独特有趣）；关闭时描边为纯色——扁平物品仍保留物品形状（需读取贴图 alpha，首次渲染有一次性的小开销），3D 物品形状由几何决定。盾牌/三叉戟近似盒模型恒为纯色。",
-
   "enchanted_outlines.config.armorPixelColorGlint": "盔甲光效混合纹理颜色",
   "enchanted_outlines.config.armorPixelColorGlint.tooltip": "仅光影兼容模式生效：开启时盔甲/鞘翅/投掷物描边采样原纹理 alpha 遮罩（贴合单层纹理轮廓，颜色与纹理混合）；关闭时描边为纯色（形状由模型几何决定）。",
-
   "enchanted_outlines.config.outlineExposureReduce": "纯色描边按物体颜色降曝光",
   "enchanted_outlines.config.outlineExposureReduce.tooltip": "仅当关闭“附魔光效混合物品颜色”时生效：纯色描边按物品贴图的平均亮度压暗（暗色物品的描边显著变暗、亮色物品基本不变），模拟“混合算法根据物体颜色降低曝光”的效果，色相不变。关闭则纯色描边保持原始亮度。",
-
   "enchanted_outlines.config.bewlr3dScale": "BEWLR 3D 描边放大系数",
   "enchanted_outlines.config.bewlr3dScale.tooltip": "模组自定义实体模型武器(BEWLR,如月弧长枪/灾变武器)3D 描边的放大系数。3D 描边外扩量 = 系数×厚度×点到中心距离(整体壳)或固定位移(逐 cube 外扩);细长武器需要更大的基础系数才明显。",
-
   "enchanted_outlines.config.bewlr3dPerCube": "灾变武器逐 cube 顶点法线外扩",
   "enchanted_outlines.config.bewlr3dPerCube.tooltip": "true = 逐 cube 顶点法线外扩(等厚贴身、细长武器端部不膨胀,推荐);false = 整体包围盒放大壳(旧算法,端部外扩偏多)。",
-
+  "enchanted_outlines.config.hazenCompat": "Hazen'N Stuff 全武器兼容",
+  "enchanted_outlines.config.hazenCompat.tooltip": "对 Hazen'N Stuff(hazennstuff:)的 BEWLR/Geo 武器(星怒等 GeckoLib 模型)启用描边:先按本体贴图 alpha 采样轮廓(形状由贴图决定,扁平部件不会膨胀成整块平面),拿不到再回退渲染捕获兜底,覆盖其全部武器模型类型。关闭则这些武器一律不描边。普通扁平物品与 AzureLib 盔甲不受影响。",
+  "enchanted_outlines.config.taczCompat": "TACZ 枪械兼容",
+  "enchanted_outlines.config.taczCompat.tooltip": "对 TACZ(GunItemRendererWrapper 自绘 Bedrock BEWLR)武器启用描边:通过捕获其 renderByItem 输出的顶点,绕捕获几何外扩一圈壳,覆盖 GUI/手持/掉落/展示框等上下文。若某姿态仍错位,关闭此项回到无描边。普通扁平物品与 AzureLib 盔甲不受影响。",
   "enchanted_outlines.config.armorUniformExpand": "盔甲描边均匀外扩",
   "enchanted_outlines.config.armorUniformExpand.tooltip": "true = 每个盔甲部件(cube)按固定厚度外扩,模组细分模型(如热泉石盔甲)描边与普通盔甲一样厚;false = 按部件尺寸比例放大(旧算法,小部件描边偏薄)。",
-
   "enchanted_outlines.config.mergeMode": "多附魔取色",
   "enchanted_outlines.config.mergeMode.tooltip": "当一件物品带有多个附魔时,以哪个附魔的颜色为准?",
   "enchanted_outlines.config.mergeMode.highest": "最高等级优先",
   "enchanted_outlines.config.mergeMode.first": "列表首个优先",
-
   "enchanted_outlines.config.defaultColor": "默认颜色",
   "enchanted_outlines.config.defaultColor.tooltip": "未单独配置颜色的附魔所用的十六进制 RGB(RRGGBB)。描边完全不透明。",
-
   "enchanted_outlines.config.enchantColors": "逐附魔颜色",
   "enchanted_outlines.config.enchantColors.tooltip": "逗号分隔的映射:id=RRGGBB。例如 minecraft:sharpness=FFD700,minecraft:fire_aspect=FF6A00。未列出的附魔使用默认颜色。",
-
   "enchanted_outlines.config.itemColors": "逐物品颜色",
   "enchanted_outlines.config.itemColors.tooltip": "逗号分隔的映射:itemid=RRGGBB。覆盖该物品的附魔取色,模组物品 id 直接可用。",
-
   "enchanted_outlines.config.enabledItems": "白名单(允许描边的物品)",
   "enchanted_outlines.config.enabledItems.tooltip": "逗号分隔的物品 id,只有列表内的物品才会描边;为空 = 全部物品(默认)。支持通配符:如 minecraft:* 匹配 minecraft 命名空间下所有物品、minecraft:di* 匹配路径以 di 开头的物品。黑名单(禁用物品)在白名单之后过滤。",
-
   "enchanted_outlines.config.disabledItems": "禁用物品",
   "enchanted_outlines.config.disabledItems.tooltip": "逗号分隔的物品 id,这些物品即使带附魔也不描边。支持通配符:如 minecraft:* 禁用整个 minecraft 命名空间、minecraft:di* 禁用路径以 di 开头的物品。",
-
   "enchanted_outlines.config.save": "保存",
-  "enchanted_outlines.config.cancel": "取消",
-
   "enchanted_outlines.config.category.advanced": "高级",
   "enchanted_outlines.config.category.experimental": "实验性",
-
-  "enchanted_outlines.config.enableTaczCompat": "TACZ 专项兼容",
-  "enchanted_outlines.config.enableTaczCompat.tooltip": "启用 TACZ (The Arsenal Collection Z) 模组的特殊渲染支持。",
-
   "enchanted_outlines.config.enableRPGRainbow": "RPG 虹灯效果",
-  "enchanted_outlines.config.enableRPGRainbow.tooltip": "启用 RPG 虹灯效果 (动态彩虹描边):true = 描边颜色随时间动态变化，形成彩虹效果 (优先级最高，覆盖所有其他颜色配置);false = 使用正常颜色配置。",
-
-  "enchanted_outlines.config.enableDataPackColors": "数据包颜色",
-  "enchanted_outlines.config.enableDataPackColors.tooltip": "从 assets/enchanted_outlines/color/pack.json 加载颜色配置：优先级低于 RPG 虹灯，高于配置文件。",
-
-  "enchanted_outlines.config.optimizeConfigUi": "配置界面优化",
-  "enchanted_outlines.config.optimizeConfigUi.tooltip": "true = 配置界面按功能分类显示 (通用/颜色/高级/实验性);false = 使用默认线性布局。"
+  "enchanted_outlines.config.enableRPGRainbow.tooltip": "启用 RPG 虹灯效果 (动态彩虹描边):true = 描边颜色随时间动态变化，形成彩虹效果 (优先级最高，覆盖所有其他颜色配置);false = 使用正常颜色配置。"
 }

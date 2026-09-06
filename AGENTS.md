@@ -166,6 +166,22 @@
   lumaCache / RenderType 缓存 / shieldModel / tridentModel / 几何缓存);资源重载
   (`setOutlineShader`)与进出世界(`LevelEvent.Load` / `ClientPlayerNetworkEvent.LoggingOut`,
   挂 `NeoForge.EVENT_BUS` 游戏总线)都会调用它。禁止新增"永不清理"的实例缓存。
+- **描边着色器颜色来源(OutlineBlend uniform)**:`outline.fsh` 颜色 =
+  `vertexColor.rgb × mix(1, texel.rgb, OutlineBlend)`。扁平"形状纹理"路径
+  `renderFlatOutlineShape` 必须走 blend=1(顶点色是白、色烘焙进贴图),否则白色描边;
+  盔甲/鞘翅/投掷物自定义 shader 路径(`armorOutlineRenderType`)按
+  `Config.ARMOR_PIXEL_COLOR_GLINT` 设 blend。uniform 全局、每批 flush 前设置。
+- **TACZ 专项(2026-09-06 重启用,`Config.ENABLE_TACZ_COMPAT` 默认 true)**:TACZ 枪械
+  是自绘 Bedrock BEWLR(`GunItemRendererWrapper`),几何不在 BakedModel,走通用 BEWLR
+  捕获(`renderBewlrCapturedOutline`,调 `renderByItem` 捕获顶点)。Hazen 用
+  `Config.ENABLE_HAZEN_COMPAT`。姿态错位可关对应开关回"无描边"。
+捕获顶点被抬到相机空间 → 绕 AABB 放大会画成"天上巨大枪模、本体无描边";所以
+  TACZ 第一人称明确不走捕获(return false),GUI/FIXED/GROUND 仍捕获贴合。所有捕获
+  统一有 `CAPTURE_MAX_SPAN`(64 模型单位)尺寸守卫,捕获到异常大的包围盒一律跳过
+  (宁可无描边,不画错位巨壳)。姿态错位可经对应开关关闭回到"无描边"。
+- 捕获描边本身已在 `renderBewlrCapturedOutline` 用<b>顶点法线平均外扩</b>(与
+  `prepareExpand/renderVertexNormalExpand` 同构):共享顶点沿相邻面法线均匀外扩、
+  形状贴合、端部不鼓,替代旧 AABB 中心放大壳(端部膨胀/易错位)。
 - 原则:本体怎么渲染,描边就怎么渲染 —— 一切自定义渲染(模型替换/纹理替换)必须
   走与本体相同的 hook/解析路径,不得硬编码原版假设。
 

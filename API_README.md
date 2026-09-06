@@ -1,353 +1,84 @@
-# Enchanted Outlines API 使用文档
+# Enchanted Outlines 扩展 API
+
+本文档面向**外部模组开发者**:如何为你的附魔/物品注册描边颜色、厚度与禁用规则。
 
 ## 概述
 
-本 API 库将原版渲染逻辑收编为结构化的模块，允许外部模组快速调用和管理描边渲染功能。
+本模组对外公开的扩展点收敛在 `com.enchantedoutlines.mod.outline` 包:
+- `OutlineColorRegistry`:静态注册表(任意时刻可调用,建议在事件中批量注册);
+- `OutlineColorEvent`:注册时机事件(客户端启动时于游戏事件总线触发一次,时序有保证)。
 
-## 架构
-
-```
-com.enchantedoutlines.mod.api
-├── core/                    # 核心层
-│   ├── OutlineRenderingApi  # 主 API 接口
-│   ├── ItemTypeInfo         # 物品类型信息
-│   └── ItemModelRegistry    # 物品类型注册表
-├── algo/                    # 算法层
-│   ├── ShapeResult          # 形状检测结果
-│   ├── OutlineShapeTextureProvider  # 形状纹理提供者
-│   └── ShapeDetector        # 形状检测器
-├── color/                   # 颜色处理层
-│   └── ColorResolver        # 颜色解析器
-├── pipeline/                # 渲染管线层
-│   └── RenderPipeline       # 渲染管线
-└── adapter/                 # 适配器层
-    ├── ItemModelAdapter     # 物品模型适配器接口
-    ├── BewlrAdapter         # BEWLR 适配器
-    ├── GeoAdapter           # Geo 适配器
-    ├── LionfishAdapter      # Lionfish 适配器
-    └── TaczAdapter          # TACZ 适配器
-```
+> 历史遗留的 `com.enchantedoutlines.mod.api` 适配层(OutlineRenderingApi / ShapeDetector /
+> RenderPipeline 等 20+ 文件)经核查为**零引用的死代码**,已于重构中删除,请勿再引用。
 
 ## 快速开始
 
-### 1. 解析物品类型
+### 1. 在事件中注册(推荐,时序有保证)
+
+客户端启动时(`FMLClientSetupEvent` 后)本模组会在 NeoForge **游戏事件总线**触发一次
+`OutlineColorEvent`,供其他模组注册描边规则。事件本身不带负载,直接调用
+`OutlineColorRegistry` 的静态方法即可:
 
 ```java
-import com.enchantedoutlines.mod.api.core.OutlineRenderingApi;
-import com.enchantedoutlines.mod.api.core.ItemTypeInfo;
-import net.minecraft.world.item.Item;
+import com.enchantedoutlines.mod.outline.OutlineColorEvent;
+import com.enchantedoutlines.mod.outline.OutlineColorRegistry;
+import net.minecraft.resources.ResourceLocation;
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.neoforge.common.NeoForge;
 
-Item item = /* 物品 */;
-ItemTypeInfo typeInfo = OutlineRenderingApi.INSTANCE.resolveItemType(item);
-
-// 检查是否为 BEWLR 物品
-if (typeInfo.isBewlr()) {
-    // BEWLR 特定处理
-}
-
-// 检查是否为 Geo 盔甲
-if (typeInfo.isGeo() && typeInfo.isArmor()) {
-    // Geo 盔甲特定处理
-}
-```
-
-### 2. 检测形状
-
-```java
-import com.enchantedoutlines.mod.api.algo.ShapeResult;
-import com.enchantedoutlines.mod.api.core.OutlineRenderingApi;
-import net.minecraft.client.renderer.block.model.BakedModel;
-import net.minecraft.world.item.ItemStack;
-
-ItemStack stack = /* 物品栈 */;
-BakedModel model = /* 物品模型 */;
-
-ShapeResult shape = OutlineRenderingApi.INSTANCE.detectShape(stack, model, null);
-
-// 判断是否为扁平物品
-if (shape.isFlat()) {
-    // 使用屏幕偏移算法
-} else {
-    // 使用 3D 外扩算法
-}
-```
-
-### 3. 解析颜色
-
-```java
-import com.enchantedoutlines.mod.api.color.ColorResolver;
-import net.minecraft.world.item.ItemStack;
-
-ItemStack stack = /* 物品栈 */;
-int color = ColorResolver.INSTANCE.resolve(stack);
-
-// 颜色优先级:
-// 1. RPG 虹灯 (若启用)
-// 2. 数据包颜色
-// 3. 配置颜色 (物品级)
-// 4. 附魔颜色
-// 5. 默认颜色
-```
-
-### 4. 执行渲染
-
-```java
-import com.enchantedoutlines.mod.api.core.OutlineRenderingApi;
-import com.mojang.blaze3d.vertex.PoseStack;
-import net.minecraft.client.renderer.block.model.BakedModel;
-
-PoseStack pose = /* 渲染姿势 */;
-BakedModel model = /* 物品模型 */;
-int color = /* 描边颜色 */;
-float thickness = /* 描边厚度 */;
-
-// GUI/GROUND/FIXED
-OutlineRenderingApi.INSTANCE.renderGuiOutline(pose, model, x, y, quadSize, color, thickness);
-
-// 手持
-OutlineRenderingApi.INSTANCE.renderHandOutline(model, pose, color, thickness);
-```
-
-## 配置选项
-
-### 新增配置项
-
-1. **RPG 虹灯** (`enableRPGRainbow` - false)
-   - 动态彩虹描边，优先级最高
-   - 覆盖所有其他颜色配置
-
-2. **TACZ 兼容** (`enableTaczCompat` - true)
-   - 启用 The Arsenal Collection Z 专项支持
-
-3. **数据包颜色** (`enableDataPackColors` - true)
-   - 从 `assets/enchanted_outlines/color/pack.json` 加载颜色
-   - 优先级低于 RPG 虹灯，高于配置文件
-
-4. **配置界面优化** (`optimizeConfigUi` - true)
-   - 配置界面按功能分类显示
-
-### 配置优先级
-
-```
-RPG 虹灯 > 数据包颜色 > 物品配置 > 附魔配置 > 默认颜色
-```
-
-## 注册自定义适配器
-
-```java
-import com.enchantedoutlines.mod.api.adapter.ItemModelAdapter;
-import com.enchantedoutlines.mod.api.core.OutlineRenderingApi;
-import net.minecraft.world.item.Item;
-
-public class MyCustomAdapter implements ItemModelAdapter {
-    @Override
-    public boolean canHandle(Item item) {
-        return item.getRegistryName().toString().equals("my_mod:my_item");
-    }
-    
-    @Override
-    public boolean renderGui(PoseStack pose, BakedModel model, int x, int y,
-                              int quadSize, int color, float thickness) {
-        // 自定义渲染逻辑
-        return true;
-    }
-}
-
-// 注册适配器
-OutlineRenderingApi.INSTANCE.registerAdapter(new MyCustomAdapter());
-```
-
-## 形状算法说明
-
-### 扁平物品 (`isFlat = true`)
-- **算法**: 屏幕偏移
-- **原理**: 8 方向平移 + 形状纹理
-- **适用**: GUI 物品、手持扁平物品
-- **动画序列支持**: 通过 `TextureAtlasSprite.contents().originalImage` 反射读取**当前帧**的 NativeImage，描边自动跟随动画帧同步更新
-
-### 3D 物品 (`is3d = true`)
-- **算法**: 顶点法线外扩
-- **原理**: 每个顶点沿平均法线方向外扩固定距离
-- **适用**: 3D 物品、手持 3D 物品
-
-## 形状纹理生成机制
-
-### CPU 读取贴图 alpha
-描边形状由贴图 alpha 通道决定，通过以下方式获取源贴图像素:
-
-1. **Atlas 精灵**(扁平物品):反射读取 `SpriteContents.originalImage`(NativeImage,CPU 内存)
-2. **独立纹理**(盔甲/鞘翅):使用 `ImageIO.read(InputStream)` 读取 PNG,支持 palette+tRNS 格式
-
-### 动画序列处理
-- **当前帧优先**:形状纹理生成时读取 sprite 的**当前帧**(非关键帧),描边与本体动画同步
-- **缓存策略**:形状纹理按`(源贴图 location,描边色，曝光开关)`缓存，资源重载时自动失效
-- **性能优化**:亮度统计按贴图缓存，避免重复遍历像素
-
-### 形状纹理格式
-- **无光影**:自定义描边 shader 采样`RGB=描边色×物品颜色,A=原贴图 alpha`
-- **光影 fallback**:`worldEmissiveOutlineRenderType` + emissive 混合
-
-### BEWLR 物品
-- **算法**: 几何放大壳 / 逐 cube 外扩
-- **配置**: `bewlr3dPerCube` 控制
-- **适用**: BEWLR 自定义渲染物品
-
-### Geo 骨骼物品
-- **算法**: 逐 cube 顶点法线外扩
-- **适用**: GeckoLib/AzureLib 盔甲/物品
-
-### LionfishAPI 物品
-- **算法**: 逐 cube 顶点法线外扩 (默认) / 整体放大壳 (回退)
-- **适用**: 灾变等 Lionfish 武器
-
-## 缓存机制
-
-### 判断缓存 (首次判断，结果复用)
-```java
-// ItemTypeInfo 按 Item 缓存
-ItemTypeInfo info = typeInfoCache.get(item);
-
-// ShapeResult 按 BakedModel 缓存
-ShapeResult shape = shapeCache.get(model);
-```
-
-### 几何缓存 (弱引用)
-```java
-// 模型几何缓存
-WeakHashMap<BakedModel, ModelGeometry> modelGeometryCache;
-
-// Geo cube 几何缓存
-WeakHashMap<GeoCube, ExpandedGeoCube> geoCubeCache;
-
-// Lionfish cube 几何缓存
-WeakHashMap<LionfishCube, ExpandedLionfishCube> lionfishCubeCache;
-```
-
-### 缓存失效
-```java
-// 资源重载/进出世界时调用
-OutlineRenderingApi.INSTANCE.invalidateAllCaches();
-```
-
-## 颜色混合模式
-
-### 纯描边色 (推荐)
-- **开关**: `itemPixelColorGlint = false`
-- **效果**: 描边为纯色，不混合物品颜色
-- **形状**: 扁平物品通过形状纹理保留轮廓
-
-### 像素混合
-- **开关**: `itemPixelColorGlint = true`
-- **效果**: 描边与物品颜色混合
-- **形状**: 完美贴合物品轮廓
-
-### RPG 虹灯
-- **开关**: `enableRPGRainbow = true`
-- **效果**: 动态彩虹描边
-- **优先级**: 最高，覆盖所有配置
-
-## 兼容性说明
-
-### BEWLR 物品
-- 自动检测 IClientItemExtensions 扩展
-- 支持 inventory 模型变体 (GUI/GROUND/FIXED)
-- 手持物品通过反射获取自定义模型
-
-### Geo 物品
-- 支持 GeckoLib 和 AzureLib
-- 自动检测盔甲/物品区别
-- 精确复刻骨骼变换
-
-### Lionfish 物品
-- 灾变武器专项支持
-- 逐 cube 外扩/整体放大壳双算法
-- 回退机制保证兼容性
-
-### TACZ 物品
-- 特殊纹理格式支持
-- 武器部件独立处理
-- 可配置开关
-
-## 数据包颜色格式
-
-```json
-{
-  "minecraft:diamond_sword": "FFD700",
-  "minecraft:netherite_chestplate": "FF6A00",
-  "my_mod:custom_item": "87CEEB"
-}
-```
-
-位置：`assets/enchanted_outlines/color/pack.json`
-
-## 注意事项
-
-1. **渲染线程**: 所有渲染 API 必须在渲染线程调用
-2. **缓存清理**: 进出世界/资源重载时自动清理缓存
-3. **性能**: 判断逻辑仅首次执行，后续使用缓存
-4. **配置保存**: 配置修改自动保存，解析缓存即时失效
-
-## 示例模组集成
-
-```java
-@Mod.EventBusSubscriber(modid = "my_mod", bus = Mod.EventBusSubscriber.Bus.MOD)
-public class MyOutlineIntegration {
-    
-    @SubscribeEvent
-    public static void onClientSetup(FMLClientSetupEvent event) {
-        // 注册自定义适配器
-        OutlineRenderingApi.INSTANCE.registerAdapter(new MyItemAdapter());
-    }
-    
-    public static class MyItemAdapter implements ItemModelAdapter {
-        @Override
-        public boolean canHandle(Item item) {
-            return item.getRegistryName().getNamespace().equals("my_mod");
-        }
-        
-        @Override
-        public boolean renderGui(PoseStack pose, BakedModel model,
-                                  int x, int y, int quadSize,
-                                  int color, float thickness) {
-            // 使用 OutlineRenderer 原生方法
-            return OutlineRenderer.INSTANCE.renderOutline(pose, model, x, y, quadSize, color, thickness);
-        }
+public class MyModClient {
+    public MyModClient() {
+        NeoForge.EVENT_BUS.addListener(OutlineColorEvent.class, event -> {
+            OutlineColorRegistry.registerItemColor(
+                    ResourceLocation.fromNamespaceAndPath("mymod", "magic_sword"), 0xFF00FF00);
+            OutlineColorRegistry.disableItem(
+                    ResourceLocation.fromNamespaceAndPath("mymod", "special_item"));
+        });
     }
 }
 ```
 
-## 故障排查
+### 2. 直接调用注册表(任意客户端初始化阶段)
 
-### 描边不显示
-1. 检查 `Config.ENABLE` 开关
-2. 检查物品是否在白名单
-3. 检查是否有冲突的渲染模组
+```java
+// 为某个附魔(id,含模组附魔)注册描边颜色,优先于配置里的 enchantColors
+OutlineColorRegistry.registerEnchantmentColor(
+        ResourceLocation.fromNamespaceAndPath("mymod", "magic"), 0xFF00FF00);
 
-### 描边颜色错误
-1. 检查配置文件中颜色格式 (RRGGBB)
-2. 检查数据包 JSON 格式
-3. 尝试关闭 RPG 虹灯测试
+// 为某个物品(id,含模组物品)固定描边颜色,覆盖该物品的附魔取色
+OutlineColorRegistry.registerItemColor(
+        ResourceLocation.fromNamespaceAndPath("mymod", "magic_sword"), 0xFF00FF00);
 
-### 性能问题
-1. 减少描边厚度
-2. 关闭不必要的形状检测
-3. 检查是否有大量自定义物品
+// 为某个物品单独设置描边厚度(像素,可浮点),覆盖全局 thickness 配置
+OutlineColorRegistry.registerItemThickness(
+        ResourceLocation.fromNamespaceAndPath("mymod", "magic_sword"), 2.5f);
 
-## 更新日志
+// 禁用某个物品的描边(即使它带有附魔)
+OutlineColorRegistry.disableItem(
+        ResourceLocation.fromNamespaceAndPath("mymod", "special_item"));
+```
 
-### v0.2.0 (当前)
-- 新增 API 库架构
-- 收编所有渲染算法
-- 新增 RPG 虹灯功能
-- 新增 TACZ 兼容
-- 新增数据包颜色支持
-- 优化配置界面分类
+## 颜色解析优先级(供参考)
 
-### v0.1.x
-- 原版渲染逻辑
+1. RPG 虹灯(配置 `enableRPGRainbow`,仅对附魔物品生效,优先级最高);
+2. 物品不在白名单(配置,支持 `minecraft:*` 通配符)或已被禁用 → 不描边;
+3. 物品固定色:程序化(`OutlineColorRegistry`)> 配置(`itemColors`);
+4. 附魔取色:程序化 > 配置(`enchantColors`;`mergeMode` 决定 highest/first);
+5. 默认色(`defaultColor`)兜底。
 
----
+程序化注册的规则**优先于配置文件**,便于模组覆盖玩家的 TOML 设置;
+模组物品/模组附魔的 id 直接可用,无需任何适配。
 
-**维护者**: Enchanted Outlines Team  
-**文档版本**: 0.2.0  
-**最后更新**: 2026-08-30
+## 渲染兼容性说明
+
+描边覆盖 GUI(背包/容器/快捷栏)、手持(第一/第三人称)、掉落物、物品展示框、
+玩家穿戴盔甲、鞘翅与投掷三叉戟。渲染实现全部位于
+`com.enchantedoutlines.mod.outline.OutlineRenderer`,不对外暴露;
+
+已知主动停用描边的物品族(用户决策,宁可无描边也不接受错位轮廓):
+- TACZ 枪械(`tacz:` / `thearsenalcollection:` 命名空间,自绘 Bedrock 渲染);
+- Hazen'N Stuff 的 Geo/BEWLR 物品(`hazennstuff:` 命名空间,如星怒,GeckoLib GeoItem)。
+
+若你的模组物品没有描边,请先确认:带附魔?未被白名单过滤?不属于上述停用族?
+对于自绘 BEWLR 渲染器(无静态模型字段、不属于 GeckoLib/AzureLib/Lionfish 体系),
+通用"渲染捕获"兜底可能因强依赖渲染上下文而失败,属已知边界。

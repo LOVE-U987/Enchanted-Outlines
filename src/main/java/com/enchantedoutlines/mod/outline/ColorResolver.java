@@ -16,9 +16,12 @@ import net.minecraft.world.item.enchantment.ItemEnchantments;
  * <p>
  * 解析优先级:
  * <ol>
- *   <li>RPG 虹灯 (配置 {@code ENABLE_RPG_RAINBOW},优先级最高)→ 动态彩虹色</li>
- *   <li>物品不在白名单 (配置，支持 {@code minecraft:*} 通配符)→ 不描边 (-1)</li>
- *   <li>物品被禁用 (程序化或配置)→ 不描边 (-1)</li>
+ *   <li>物品被禁用 (程序化 {@code OutlineColorRegistry.disableItem} 或配置
+ *       {@code disabledItems},支持通配符)→ 不描边 (-1)。<b>禁用在任何颜色之前</b>,
+ *       即使开启 RPG 虹灯也生效 (程序化 disable 的 javadoc 承诺"即使带附魔也禁用")</li>
+ *   <li>RPG 虹灯 (配置 {@code ENABLE_RPG_RAINBOW})→ 动态彩虹色 (仅对附魔物品,
+ *       优先级高于物品固定色/附魔色;白名单不限制彩虹)</li>
+ *   <li>物品不在白名单 (配置 {@code enabledItems})→ 不描边 (-1)</li>
  *   <li>物品固定颜色 (程序化 &gt; 配置)→ 使用该色</li>
  *   <li>附魔取色 (程序化 &gt; 配置;mergeMode 决定 highest/first)→ 使用该色</li>
  *   <li>默认色兜底</li>
@@ -29,9 +32,6 @@ import net.minecraft.world.item.enchantment.ItemEnchantments;
  * {@code Holder<Enchantment>}),颜色按附魔的 ResourceLocation 匹配 → 模组附魔天然可用。
  */
 public final class ColorResolver {
-
-    /** 物品 → 最后计算时间 (独立于全局，避免冲突)。 */
-    private static final java.util.Map<ResourceLocation, Long> RAINBOW_CACHE = new java.util.HashMap<>();
 
     private ColorResolver() {
     }
@@ -46,27 +46,34 @@ public final class ColorResolver {
             return -1;
         }
 
-        // 1. RPG 虹灯 (优先级最高，仅对附魔物品生效)
+        ResourceLocation itemId = itemId(stack);
+        if (itemId != null) {
+            // ⚠️ 禁用检查必须在 RPG 虹灯之前:程序化 disableItem / 配置 disabledItems
+            // 的语义是"该物品永不描边(即使带附魔)",开启彩虹时同样要生效 —— 曾因
+            // 彩虹分支提前返回而穿透禁用(disable 被彩虹覆盖,违背 API 承诺)。
+            if (OutlineColorRegistry.isItemDisabled(itemId) || Config.isItemDisabled(itemId)) {
+                return -1;
+            }
+        }
+
+        // 1. RPG 虹灯 (仅对附魔物品生效,优先级最高)
         if (Config.ENABLE_RPG_RAINBOW.get()) {
             return resolveRainbowColor(stack);
         }
 
-        ResourceLocation itemId = itemId(stack);
         if (itemId != null) {
-            if (!Config.isItemEnabled(itemId)
-                    || OutlineColorRegistry.isItemDisabled(itemId) || Config.isItemDisabled(itemId)) {
+            // 2. 白名单 (不在列表内 → 不描边;白名单不限制彩虹,故放在彩虹之后)
+            if (!Config.isItemEnabled(itemId)) {
                 return -1;
             }
-            Integer itemColor = OutlineColorRegistry.itemColor(itemId);
+            // 3. 物品固定颜色 (程序化 > 配置)
+            Integer itemColor = fixedItemColor(itemId);
             if (itemColor != null) {
                 return itemColor;
             }
-            Integer configItemColor = Config.itemColor(itemId);
-            if (configItemColor != null) {
-                return configItemColor;
-            }
         }
 
+        // 4. 附魔取色 (mergeMode: highest / first)
         int fallback = Config.defaultColorArgb();
         if (Config.isHighestMerge()) {
             int bestLevel = -1;
@@ -88,29 +95,31 @@ public final class ColorResolver {
         return fallback;
     }
 
+    /** 物品固定色 (程序化 > 配置);无固定色返回 null。调用方需先确认物品未被禁用/在白名单。 */
+    private static Integer fixedItemColor(ResourceLocation itemId) {
+        Integer itemColor = OutlineColorRegistry.itemColor(itemId);
+        if (itemColor != null) {
+            return itemColor;
+        }
+        return Config.itemColor(itemId);
+    }
+
     /**
      * 解析 RPG 虹灯颜色。
      * <p>
-     * 基于物品 ID + 时间的 HSB 转 RGB 渐变，5 秒周期。
+     * 基于物品 ID + 时间的 HSB 转 RGB 渐变，5 秒周期。颜色随时间<b>连续</b>变化
+     * (HSBtoRGB 开销极小,每帧计算即可;旧实现"100ms 节流缓存"只写不读,
+     * 是无效缓存,已移除 —— 彩虹本就该逐帧刷新)。
      */
     private static int resolveRainbowColor(ItemStack stack) {
         ResourceLocation itemId = itemId(stack);
         if (itemId == null) {
             return Config.defaultColorArgb();
         }
-
         long now = System.currentTimeMillis();
-        Long lastCalc = RAINBOW_CACHE.get(itemId);
-
-        // 每 100ms 更新一次 (避免每帧计算)
-        if (lastCalc == null || now - lastCalc > 100) {
-            RAINBOW_CACHE.put(itemId, now);
-        }
-
         // 5 秒周期，每个物品的 hue 偏移基于 hashCode
         long time = now % 5000;
-        float hue = (time + stack.getItem().hashCode()) / 5000f;
-
+        float hue = (time + itemId.hashCode()) / 5000f;
         // HSB 转 RGB: saturation=1.0, brightness=1.0
         int rgb = java.awt.Color.HSBtoRGB(hue, 1.0f, 1.0f);
         return 0xFF000000 | rgb;
@@ -132,17 +141,15 @@ public final class ColorResolver {
     public static int resolveFoilOnly(ItemStack stack) {
         ResourceLocation itemId = itemId(stack);
         if (itemId != null) {
-            if (!Config.isItemEnabled(itemId)
-                    || OutlineColorRegistry.isItemDisabled(itemId) || Config.isItemDisabled(itemId)) {
+            if (OutlineColorRegistry.isItemDisabled(itemId) || Config.isItemDisabled(itemId)) {
                 return -1;
             }
-            Integer itemColor = OutlineColorRegistry.itemColor(itemId);
+            if (!Config.isItemEnabled(itemId)) {
+                return -1;
+            }
+            Integer itemColor = fixedItemColor(itemId);
             if (itemColor != null) {
                 return itemColor;
-            }
-            Integer configItemColor = Config.itemColor(itemId);
-            if (configItemColor != null) {
-                return configItemColor;
             }
         }
         return Config.defaultColorArgb();
@@ -189,10 +196,5 @@ public final class ColorResolver {
 
     private static ResourceLocation itemId(ItemStack stack) {
         return stack.getItemHolder().unwrapKey().map(key -> key.location()).orElse(null);
-    }
-
-    /** 清空缓存 (资源重载/进出世界时调用)。 */
-    public static void invalidateCache() {
-        RAINBOW_CACHE.clear();
     }
 }

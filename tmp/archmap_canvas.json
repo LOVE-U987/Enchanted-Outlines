@@ -1,0 +1,3558 @@
+{
+ "document": {
+  "store": {
+   "document:document": {
+    "gridSize": 10,
+    "name": "",
+    "meta": {},
+    "id": "document:document",
+    "typeName": "document"
+   },
+   "page:page": {
+    "meta": {},
+    "id": "page:page",
+    "name": "Page 1",
+    "index": "a1",
+    "typeName": "page"
+   },
+   "user:oPLqZoCTxLxjiB_d-LsQF": {
+    "name": "",
+    "color": "#39B178",
+    "imageUrl": "",
+    "meta": {},
+    "id": "user:oPLqZoCTxLxjiB_d-LsQF",
+    "typeName": "user"
+   },
+   "shape:arch1": {
+    "x": 150,
+    "y": 140,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/EnchantedOutlines.java",
+     "symbolName": "EnchantedOutlines",
+     "symbolStart": {
+      "line": 19,
+      "character": 0
+     },
+     "signature": "public class EnchantedOutlines {",
+     "selectionStart": {
+      "line": 19,
+      "character": 0
+     },
+     "preview": "public class EnchantedOutlines {"
+    },
+    "id": "shape:arch1",
+    "type": "geo",
+    "props": {
+     "w": 226,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "violet",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "EnchantedOutlines"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "@Mod 主类 · 注册 COMMON 配置"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a1a",
+    "typeName": "shape"
+   },
+   "shape:arch2": {
+    "x": 150,
+    "y": 315,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/EnchantedOutlinesClient.java",
+     "symbolName": "EnchantedOutlinesClient",
+     "symbolStart": {
+      "line": 30,
+      "character": 0
+     },
+     "signature": "public class EnchantedOutlinesClient {",
+     "selectionStart": {
+      "line": 30,
+      "character": 0
+     },
+     "preview": "public class EnchantedOutlinesClient {"
+    },
+    "id": "shape:arch2",
+    "type": "geo",
+    "props": {
+     "w": 298,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "violet",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "EnchantedOutlinesClient"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "@Mod(CLIENT) · 着色器/配置界面/进出世界清缓存"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a1b",
+    "typeName": "shape"
+   },
+   "shape:arch3": {
+    "x": 520,
+    "y": 140,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/config/Config.java",
+     "symbolName": "Config",
+     "symbolStart": {
+      "line": 23,
+      "character": 0
+     },
+     "signature": "public final class Config {",
+     "selectionStart": {
+      "line": 23,
+      "character": 0
+     },
+     "preview": "public final class Config {"
+    },
+    "id": "shape:arch3",
+    "type": "geo",
+    "props": {
+     "w": 186,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "light-green",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "Config"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "配置定义(COMMON)+解析缓存"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a1c",
+    "typeName": "shape"
+   },
+   "shape:arch4": {
+    "x": 520,
+    "y": 315,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/config/EnchantedConfigScreen.java",
+     "symbolName": "EnchantedConfigScreen",
+     "symbolStart": {
+      "line": 28,
+      "character": 0
+     },
+     "signature": "public class EnchantedConfigScreen extends Screen {",
+     "selectionStart": {
+      "line": 28,
+      "character": 0
+     },
+     "preview": "public class EnchantedConfigScreen extends Screen {"
+    },
+    "id": "shape:arch4",
+    "type": "geo",
+    "props": {
+     "w": 218,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "light-green",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "EnchantedConfigScreen"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "配置界面(分类导航)"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a1d",
+    "typeName": "shape"
+   },
+   "shape:arch5": {
+    "x": 890,
+    "y": 140,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "OutlineRenderer",
+     "symbolStart": {
+      "line": 96,
+      "character": 0
+     },
+     "signature": "public final class OutlineRenderer {",
+     "selectionStart": {
+      "line": 96,
+      "character": 0
+     },
+     "preview": "public final class OutlineRenderer {"
+    },
+    "id": "shape:arch5",
+    "type": "geo",
+    "props": {
+     "w": 300,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "blue",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "OutlineRenderer"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "描边渲染核心(4320 行)"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a1e",
+    "typeName": "shape"
+   },
+   "shape:arch6": {
+    "x": 890,
+    "y": 315,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/ColorResolver.java",
+     "symbolName": "ColorResolver",
+     "symbolStart": {
+      "line": 33,
+      "character": 0
+     },
+     "signature": "public final class ColorResolver {",
+     "selectionStart": {
+      "line": 33,
+      "character": 0
+     },
+     "preview": "public final class ColorResolver {"
+    },
+    "id": "shape:arch6",
+    "type": "geo",
+    "props": {
+     "w": 226,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "light-blue",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "ColorResolver"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "颜色解析 resolve/thickness"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a1f",
+    "typeName": "shape"
+   },
+   "shape:arch7": {
+    "x": 890,
+    "y": 490,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineColorRegistry.java",
+     "symbolName": "OutlineColorRegistry",
+     "symbolStart": {
+      "line": 18,
+      "character": 0
+     },
+     "signature": "public final class OutlineColorRegistry {",
+     "selectionStart": {
+      "line": 18,
+      "character": 0
+     },
+     "preview": "public final class OutlineColorRegistry {"
+    },
+    "id": "shape:arch7",
+    "type": "geo",
+    "props": {
+     "w": 210,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "light-blue",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "OutlineColorRegistry"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "公开扩展注册表(程序化规则)"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a1g",
+    "typeName": "shape"
+   },
+   "shape:arch8": {
+    "x": 890,
+    "y": 665,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineColorEvent.java",
+     "symbolName": "OutlineColorEvent",
+     "symbolStart": {
+      "line": 21,
+      "character": 0
+     },
+     "signature": "public final class OutlineColorEvent extends Event {",
+     "selectionStart": {
+      "line": 21,
+      "character": 0
+     },
+     "preview": "public final class OutlineColorEvent extends Event {"
+    },
+    "id": "shape:arch8",
+    "type": "geo",
+    "props": {
+     "w": 186,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "light-blue",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "OutlineColorEvent"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "扩展注册事件(游戏总线)"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a1h",
+    "typeName": "shape"
+   },
+   "shape:arch9": {
+    "x": 1260,
+    "y": 140,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/mixin/GuiGraphicsMixin.java",
+     "symbolName": "GuiGraphicsMixin",
+     "symbolStart": {
+      "line": 36,
+      "character": 0
+     },
+     "signature": "public abstract class GuiGraphicsMixin {",
+     "selectionStart": {
+      "line": 36,
+      "character": 0
+     },
+     "preview": "public abstract class GuiGraphicsMixin {"
+    },
+    "id": "shape:arch9",
+    "type": "geo",
+    "props": {
+     "w": 178,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "light-orange",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "GuiGraphicsMixin"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a1i",
+    "typeName": "shape"
+   },
+   "shape:arch10": {
+    "x": 1260,
+    "y": 315,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/mixin/ItemRendererMixin.java",
+     "symbolName": "ItemRendererMixin",
+     "symbolStart": {
+      "line": 39,
+      "character": 0
+     },
+     "signature": "public abstract class ItemRendererMixin {",
+     "selectionStart": {
+      "line": 39,
+      "character": 0
+     },
+     "preview": "public abstract class ItemRendererMixin {"
+    },
+    "id": "shape:arch10",
+    "type": "geo",
+    "props": {
+     "w": 186,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "light-orange",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "ItemRendererMixin"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a1j",
+    "typeName": "shape"
+   },
+   "shape:arch11": {
+    "x": 1260,
+    "y": 490,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/mixin/ItemInHandRendererMixin.java",
+     "symbolName": "ItemInHandRendererMixin",
+     "symbolStart": {
+      "line": 55,
+      "character": 0
+     },
+     "signature": "public abstract class ItemInHandRendererMixin {",
+     "selectionStart": {
+      "line": 55,
+      "character": 0
+     },
+     "preview": "public abstract class ItemInHandRendererMixin {"
+    },
+    "id": "shape:arch11",
+    "type": "geo",
+    "props": {
+     "w": 234,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "light-orange",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "ItemInHandRendererMixin"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a1k",
+    "typeName": "shape"
+   },
+   "shape:arch12": {
+    "x": 1260,
+    "y": 665,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/mixin/HumanoidArmorLayerMixin.java",
+     "symbolName": "HumanoidArmorLayerMixin",
+     "symbolStart": {
+      "line": 34,
+      "character": 0
+     },
+     "signature": "public abstract class HumanoidArmorLayerMixin {",
+     "selectionStart": {
+      "line": 34,
+      "character": 0
+     },
+     "preview": "public abstract class HumanoidArmorLayerMixin {"
+    },
+    "id": "shape:arch12",
+    "type": "geo",
+    "props": {
+     "w": 234,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "light-orange",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "HumanoidArmorLayerMixin"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a1l",
+    "typeName": "shape"
+   },
+   "shape:arch13": {
+    "x": 1260,
+    "y": 840,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/mixin/ElytraLayerMixin.java",
+     "symbolName": "ElytraLayerMixin",
+     "symbolStart": {
+      "line": 45,
+      "character": 0
+     },
+     "signature": "public abstract class ElytraLayerMixin {",
+     "selectionStart": {
+      "line": 45,
+      "character": 0
+     },
+     "preview": "public abstract class ElytraLayerMixin {"
+    },
+    "id": "shape:arch13",
+    "type": "geo",
+    "props": {
+     "w": 178,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "light-orange",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "ElytraLayerMixin"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a1m",
+    "typeName": "shape"
+   },
+   "shape:arch14": {
+    "x": 1260,
+    "y": 1015,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/mixin/ThrownTridentRendererMixin.java",
+     "symbolName": "ThrownTridentRendererMixin",
+     "symbolStart": {
+      "line": 42,
+      "character": 0
+     },
+     "signature": "public abstract class ThrownTridentRendererMixin {",
+     "selectionStart": {
+      "line": 42,
+      "character": 0
+     },
+     "preview": "public abstract class ThrownTridentRendererMixin {"
+    },
+    "id": "shape:arch14",
+    "type": "geo",
+    "props": {
+     "w": 258,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "light-orange",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "ThrownTridentRendererMixin"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a1n",
+    "typeName": "shape"
+   },
+   "shape:arch15": {
+    "x": 1260,
+    "y": 1190,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/mixin/ElytraLayerAccessor.java",
+     "symbolName": "ElytraLayerAccessor",
+     "symbolStart": {
+      "line": 16,
+      "character": 0
+     },
+     "signature": "public interface ElytraLayerAccessor {",
+     "selectionStart": {
+      "line": 16,
+      "character": 0
+     },
+     "preview": "public interface ElytraLayerAccessor {"
+    },
+    "id": "shape:arch15",
+    "type": "geo",
+    "props": {
+     "w": 202,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "light-orange",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "ElytraLayerAccessor"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a1o",
+    "typeName": "shape"
+   },
+   "shape:arch16": {
+    "x": 1260,
+    "y": 1365,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/mixin/ElytraModelAccessor.java",
+     "symbolName": "ElytraModelAccessor",
+     "symbolStart": {
+      "line": 15,
+      "character": 0
+     },
+     "signature": "public interface ElytraModelAccessor {",
+     "selectionStart": {
+      "line": 15,
+      "character": 0
+     },
+     "preview": "public interface ElytraModelAccessor {"
+    },
+    "id": "shape:arch16",
+    "type": "geo",
+    "props": {
+     "w": 202,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "light-orange",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "ElytraModelAccessor"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a1p",
+    "typeName": "shape"
+   },
+   "shape:arch17": {
+    "x": 1720,
+    "y": 140,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "renderOutline",
+     "symbolStart": {
+      "line": 570,
+      "character": 0
+     },
+     "signature": "renderOutline(...)",
+     "selectionStart": {
+      "line": 570,
+      "character": 0
+     },
+     "preview": "renderOutline(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch17",
+    "type": "geo",
+    "props": {
+     "w": 170,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "light-blue",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "renderOutline()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "GUI/手持 统一描边入口"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a1q",
+    "typeName": "shape"
+   },
+   "shape:arch18": {
+    "x": 1720,
+    "y": 244,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "renderHandOutline",
+     "symbolStart": {
+      "line": 801,
+      "character": 0
+     },
+     "signature": "renderHandOutline(...)",
+     "selectionStart": {
+      "line": 801,
+      "character": 0
+     },
+     "preview": "renderHandOutline(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch18",
+    "type": "geo",
+    "props": {
+     "w": 202,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "light-blue",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "renderHandOutline()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "世界 3D/扁平描边"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a1r",
+    "typeName": "shape"
+   },
+   "shape:arch19": {
+    "x": 1720,
+    "y": 348,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "renderGui3dInflate",
+     "symbolStart": {
+      "line": 625,
+      "character": 0
+     },
+     "signature": "renderGui3dInflate(...)",
+     "selectionStart": {
+      "line": 625,
+      "character": 0
+     },
+     "preview": "renderGui3dInflate(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch19",
+    "type": "geo",
+    "props": {
+     "w": 210,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "light-blue",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "renderGui3dInflate()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "GUI 3D 放大壳"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a1s",
+    "typeName": "shape"
+   },
+   "shape:arch20": {
+    "x": 1720,
+    "y": 452,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "renderVertexNormalExpand",
+     "symbolStart": {
+      "line": 764,
+      "character": 0
+     },
+     "signature": "renderVertexNormalExpand(...)",
+     "selectionStart": {
+      "line": 764,
+      "character": 0
+     },
+     "preview": "renderVertexNormalExpand(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch20",
+    "type": "geo",
+    "props": {
+     "w": 258,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "light-blue",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "renderVertexNormalExpand()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "顶点法线外扩"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a1t",
+    "typeName": "shape"
+   },
+   "shape:arch21": {
+    "x": 1720,
+    "y": 556,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "renderFlatOutlineShape",
+     "symbolStart": {
+      "line": 1184,
+      "character": 0
+     },
+     "signature": "renderFlatOutlineShape(...)",
+     "selectionStart": {
+      "line": 1184,
+      "character": 0
+     },
+     "preview": "renderFlatOutlineShape(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch21",
+    "type": "geo",
+    "props": {
+     "w": 242,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "light-blue",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "renderFlatOutlineShape()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "扁平形状纹理描边"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a1u",
+    "typeName": "shape"
+   },
+   "shape:arch22": {
+    "x": 1720,
+    "y": 660,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "needVanillaShaderFallback",
+     "symbolStart": {
+      "line": 341,
+      "character": 0
+     },
+     "signature": "needVanillaShaderFallback(...)",
+     "selectionStart": {
+      "line": 341,
+      "character": 0
+     },
+     "preview": "needVanillaShaderFallback(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch22",
+    "type": "geo",
+    "props": {
+     "w": 266,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "grey",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "needVanillaShaderFallback()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "光影 fallback 判断"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a1v",
+    "typeName": "shape"
+   },
+   "shape:arch23": {
+    "x": 1720,
+    "y": 764,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "setOutlineShader",
+     "symbolStart": {
+      "line": 468,
+      "character": 0
+     },
+     "signature": "setOutlineShader(...)",
+     "selectionStart": {
+      "line": 468,
+      "character": 0
+     },
+     "preview": "setOutlineShader(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch23",
+    "type": "geo",
+    "props": {
+     "w": 194,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "grey",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "setOutlineShader()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "着色器加载回调"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a1w",
+    "typeName": "shape"
+   },
+   "shape:arch24": {
+    "x": 1720,
+    "y": 868,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "invalidateCaches",
+     "symbolStart": {
+      "line": 495,
+      "character": 0
+     },
+     "signature": "invalidateCaches(...)",
+     "selectionStart": {
+      "line": 495,
+      "character": 0
+     },
+     "preview": "invalidateCaches(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch24",
+    "type": "geo",
+    "props": {
+     "w": 194,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "grey",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "invalidateCaches()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "缓存统一清理"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a1x",
+    "typeName": "shape"
+   },
+   "shape:arch25": {
+    "x": 1720,
+    "y": 972,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "shapeTextureForLocation",
+     "symbolStart": {
+      "line": 1328,
+      "character": 0
+     },
+     "signature": "shapeTextureForLocation(...)",
+     "selectionStart": {
+      "line": 1328,
+      "character": 0
+     },
+     "preview": "shapeTextureForLocation(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch25",
+    "type": "geo",
+    "props": {
+     "w": 250,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "light-violet",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "shapeTextureForLocation()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "独立纹理→形状纹理"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a1y",
+    "typeName": "shape"
+   },
+   "shape:arch26": {
+    "x": 1720,
+    "y": 1076,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "spriteOriginalImage",
+     "symbolStart": {
+      "line": 1390,
+      "character": 0
+     },
+     "signature": "spriteOriginalImage(...)",
+     "selectionStart": {
+      "line": 1390,
+      "character": 0
+     },
+     "preview": "spriteOriginalImage(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch26",
+    "type": "geo",
+    "props": {
+     "w": 218,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "light-violet",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "spriteOriginalImage()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "精灵原图像反射读取"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a1z",
+    "typeName": "shape"
+   },
+   "shape:arch27": {
+    "x": 1720,
+    "y": 1180,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "emitQuadShape",
+     "symbolStart": {
+      "line": 1430,
+      "character": 0
+     },
+     "signature": "emitQuadShape(...)",
+     "selectionStart": {
+      "line": 1430,
+      "character": 0
+     },
+     "preview": "emitQuadShape(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch27",
+    "type": "geo",
+    "props": {
+     "w": 170,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "light-violet",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "emitQuadShape()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "形状纹理 quad 写入"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a2a",
+    "typeName": "shape"
+   },
+   "shape:arch28": {
+    "x": 1720,
+    "y": 1284,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "averageLuma",
+     "symbolStart": {
+      "line": 1054,
+      "character": 0
+     },
+     "signature": "averageLuma(...)",
+     "selectionStart": {
+      "line": 1054,
+      "character": 0
+     },
+     "preview": "averageLuma(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch28",
+    "type": "geo",
+    "props": {
+     "w": 154,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "light-violet",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "averageLuma()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "平均感知亮度(÷255)"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a2b",
+    "typeName": "shape"
+   },
+   "shape:arch29": {
+    "x": 1720,
+    "y": 1388,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "darkenByLuma",
+     "symbolStart": {
+      "line": 1126,
+      "character": 0
+     },
+     "signature": "darkenByLuma(...)",
+     "selectionStart": {
+      "line": 1126,
+      "character": 0
+     },
+     "preview": "darkenByLuma(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch29",
+    "type": "geo",
+    "props": {
+     "w": 162,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "light-violet",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "darkenByLuma()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "纯色描边压暗曝光"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a2c",
+    "typeName": "shape"
+   },
+   "shape:arch30": {
+    "x": 1720,
+    "y": 1492,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "isFullyTransparent",
+     "symbolStart": {
+      "line": 3288,
+      "character": 0
+     },
+     "signature": "isFullyTransparent(...)",
+     "selectionStart": {
+      "line": 3288,
+      "character": 0
+     },
+     "preview": "isFullyTransparent(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch30",
+    "type": "geo",
+    "props": {
+     "w": 210,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "light-violet",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "isFullyTransparent()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "全透明纹理检测"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a2d",
+    "typeName": "shape"
+   },
+   "shape:arch31": {
+    "x": 1720,
+    "y": 1596,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "shieldModel",
+     "symbolStart": {
+      "line": 1566,
+      "character": 0
+     },
+     "signature": "shieldModel(...)",
+     "selectionStart": {
+      "line": 1566,
+      "character": 0
+     },
+     "preview": "shieldModel(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch31",
+    "type": "geo",
+    "props": {
+     "w": 154,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "light-green",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "shieldModel()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "盾牌近似盒模型"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a2e",
+    "typeName": "shape"
+   },
+   "shape:arch32": {
+    "x": 2080,
+    "y": 140,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "tridentModel",
+     "symbolStart": {
+      "line": 1603,
+      "character": 0
+     },
+     "signature": "tridentModel(...)",
+     "selectionStart": {
+      "line": 1603,
+      "character": 0
+     },
+     "preview": "tridentModel(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch32",
+    "type": "geo",
+    "props": {
+     "w": 162,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "light-green",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "tridentModel()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "三叉戟近似盒模型"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a2f",
+    "typeName": "shape"
+   },
+   "shape:arch33": {
+    "x": 2080,
+    "y": 244,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "inventoryModelFor",
+     "symbolStart": {
+      "line": 1672,
+      "character": 0
+     },
+     "signature": "inventoryModelFor(...)",
+     "selectionStart": {
+      "line": 1672,
+      "character": 0
+     },
+     "preview": "inventoryModelFor(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch33",
+    "type": "geo",
+    "props": {
+     "w": 202,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "light-green",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "inventoryModelFor()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "平面 inventory 模型探测"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a2g",
+    "typeName": "shape"
+   },
+   "shape:arch34": {
+    "x": 2080,
+    "y": 348,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "renderBewlrEntityOutline",
+     "symbolStart": {
+      "line": 1886,
+      "character": 0
+     },
+     "signature": "renderBewlrEntityOutline(...)",
+     "selectionStart": {
+      "line": 1886,
+      "character": 0
+     },
+     "preview": "renderBewlrEntityOutline(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch34",
+    "type": "geo",
+    "props": {
+     "w": 258,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "orange",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "renderBewlrEntityOutline()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "BEWLR 3D 描边入口"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a2h",
+    "typeName": "shape"
+   },
+   "shape:arch35": {
+    "x": 2080,
+    "y": 452,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "findBewlrModel",
+     "symbolStart": {
+      "line": 2274,
+      "character": 0
+     },
+     "signature": "findBewlrModel(...)",
+     "selectionStart": {
+      "line": 2274,
+      "character": 0
+     },
+     "preview": "findBewlrModel(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch35",
+    "type": "geo",
+    "props": {
+     "w": 178,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "orange",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "findBewlrModel()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "BEWLR 模型反射查找"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a2i",
+    "typeName": "shape"
+   },
+   "shape:arch36": {
+    "x": 2080,
+    "y": 556,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "buildCataclysmSpecs",
+     "symbolStart": {
+      "line": 1843,
+      "character": 0
+     },
+     "signature": "buildCataclysmSpecs(...)",
+     "selectionStart": {
+      "line": 1843,
+      "character": 0
+     },
+     "preview": "buildCataclysmSpecs(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch36",
+    "type": "geo",
+    "props": {
+     "w": 218,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "orange",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "buildCataclysmSpecs()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "灾变精确适配表"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a2j",
+    "typeName": "shape"
+   },
+   "shape:arch37": {
+    "x": 2080,
+    "y": 660,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "ensureBewlrModelsLoaded",
+     "symbolStart": {
+      "line": 2387,
+      "character": 0
+     },
+     "signature": "ensureBewlrModelsLoaded(...)",
+     "selectionStart": {
+      "line": 2387,
+      "character": 0
+     },
+     "preview": "ensureBewlrModelsLoaded(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch37",
+    "type": "geo",
+    "props": {
+     "w": 250,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "orange",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "ensureBewlrModelsLoaded()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "触发延迟初始化"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a2k",
+    "typeName": "shape"
+   },
+   "shape:arch38": {
+    "x": 2080,
+    "y": 764,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "isTaczNamespace",
+     "symbolStart": {
+      "line": 1769,
+      "character": 0
+     },
+     "signature": "isTaczNamespace(...)",
+     "selectionStart": {
+      "line": 1769,
+      "character": 0
+     },
+     "preview": "isTaczNamespace(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch38",
+    "type": "geo",
+    "props": {
+     "w": 186,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "orange",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "isTaczNamespace()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "TACZ 停用拦截"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a2l",
+    "typeName": "shape"
+   },
+   "shape:arch39": {
+    "x": 2080,
+    "y": 868,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "isHazenNamespace",
+     "symbolStart": {
+      "line": 1789,
+      "character": 0
+     },
+     "signature": "isHazenNamespace(...)",
+     "selectionStart": {
+      "line": 1789,
+      "character": 0
+     },
+     "preview": "isHazenNamespace(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch39",
+    "type": "geo",
+    "props": {
+     "w": 194,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "orange",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "isHazenNamespace()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "Hazen 停用拦截"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a2m",
+    "typeName": "shape"
+   },
+   "shape:arch40": {
+    "x": 2080,
+    "y": 972,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "renderBewlrCapturedOutline",
+     "symbolStart": {
+      "line": 2225,
+      "character": 0
+     },
+     "signature": "renderBewlrCapturedOutline(...)",
+     "selectionStart": {
+      "line": 2225,
+      "character": 0
+     },
+     "preview": "renderBewlrCapturedOutline(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch40",
+    "type": "geo",
+    "props": {
+     "w": 274,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "orange",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "renderBewlrCapturedOutline()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "捕获几何放大壳"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a2n",
+    "typeName": "shape"
+   },
+   "shape:arch41": {
+    "x": 2080,
+    "y": 1076,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "captureBewlrGeometry",
+     "symbolStart": {
+      "line": 2023,
+      "character": 0
+     },
+     "signature": "captureBewlrGeometry(...)",
+     "selectionStart": {
+      "line": 2023,
+      "character": 0
+     },
+     "preview": "captureBewlrGeometry(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch41",
+    "type": "geo",
+    "props": {
+     "w": 226,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "orange",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "captureBewlrGeometry()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "renderByItem 顶点捕获"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a2o",
+    "typeName": "shape"
+   },
+   "shape:arch42": {
+    "x": 2080,
+    "y": 1180,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "resolveBewlrRenderer",
+     "symbolStart": {
+      "line": 2055,
+      "character": 0
+     },
+     "signature": "resolveBewlrRenderer(...)",
+     "selectionStart": {
+      "line": 2055,
+      "character": 0
+     },
+     "preview": "resolveBewlrRenderer(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch42",
+    "type": "geo",
+    "props": {
+     "w": 226,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "orange",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "resolveBewlrRenderer()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "BEWLR 渲染器解析"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a2p",
+    "typeName": "shape"
+   },
+   "shape:arch43": {
+    "x": 2080,
+    "y": 1284,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "renderLionfishPerCube",
+     "symbolStart": {
+      "line": 2460,
+      "character": 0
+     },
+     "signature": "renderLionfishPerCube(...)",
+     "selectionStart": {
+      "line": 2460,
+      "character": 0
+     },
+     "preview": "renderLionfishPerCube(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch43",
+    "type": "geo",
+    "props": {
+     "w": 234,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "light-red",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "renderLionfishPerCube()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "逐 cube 顶点法线外扩"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a2q",
+    "typeName": "shape"
+   },
+   "shape:arch44": {
+    "x": 2080,
+    "y": 1388,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "renderLionfishPart",
+     "symbolStart": {
+      "line": 2505,
+      "character": 0
+     },
+     "signature": "renderLionfishPart(...)",
+     "selectionStart": {
+      "line": 2505,
+      "character": 0
+     },
+     "preview": "renderLionfishPart(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch44",
+    "type": "geo",
+    "props": {
+     "w": 210,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "light-red",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "renderLionfishPart()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "部件递归渲染"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a2r",
+    "typeName": "shape"
+   },
+   "shape:arch45": {
+    "x": 2080,
+    "y": 1492,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "renderLionfishInflated",
+     "symbolStart": {
+      "line": 2750,
+      "character": 0
+     },
+     "signature": "renderLionfishInflated(...)",
+     "selectionStart": {
+      "line": 2750,
+      "character": 0
+     },
+     "preview": "renderLionfishInflated(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch45",
+    "type": "geo",
+    "props": {
+     "w": 242,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "light-red",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "renderLionfishInflated()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "整体包围盒放大壳"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a2s",
+    "typeName": "shape"
+   },
+   "shape:arch46": {
+    "x": 2080,
+    "y": 1596,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "renderGeoItemOutline",
+     "symbolStart": {
+      "line": 3750,
+      "character": 0
+     },
+     "signature": "renderGeoItemOutline(...)",
+     "selectionStart": {
+      "line": 3750,
+      "character": 0
+     },
+     "preview": "renderGeoItemOutline(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch46",
+    "type": "geo",
+    "props": {
+     "w": 226,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "violet",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "renderGeoItemOutline()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "Geo 物品描边入口"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a2t",
+    "typeName": "shape"
+   },
+   "shape:arch47": {
+    "x": 2440,
+    "y": 140,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "renderGeoModelOutline",
+     "symbolStart": {
+      "line": 3714,
+      "character": 0
+     },
+     "signature": "renderGeoModelOutline(...)",
+     "selectionStart": {
+      "line": 3714,
+      "character": 0
+     },
+     "preview": "renderGeoModelOutline(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch47",
+    "type": "geo",
+    "props": {
+     "w": 234,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "violet",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "renderGeoModelOutline()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "Geo 骨骼放大壳"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a2u",
+    "typeName": "shape"
+   },
+   "shape:arch48": {
+    "x": 2440,
+    "y": 244,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "geoItemModel",
+     "symbolStart": {
+      "line": 3766,
+      "character": 0
+     },
+     "signature": "geoItemModel(...)",
+     "selectionStart": {
+      "line": 3766,
+      "character": 0
+     },
+     "preview": "geoItemModel(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch48",
+    "type": "geo",
+    "props": {
+     "w": 162,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "violet",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "geoItemModel()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "Geo 模型解析"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a2v",
+    "typeName": "shape"
+   },
+   "shape:arch49": {
+    "x": 2440,
+    "y": 348,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "renderEntityModelOutline",
+     "symbolStart": {
+      "line": 3128,
+      "character": 0
+     },
+     "signature": "renderEntityModelOutline(...)",
+     "selectionStart": {
+      "line": 3128,
+      "character": 0
+     },
+     "preview": "renderEntityModelOutline(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch49",
+    "type": "geo",
+    "props": {
+     "w": 258,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "violet",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "renderEntityModelOutline()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "Mojang Model 放大壳"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a2w",
+    "typeName": "shape"
+   },
+   "shape:arch50": {
+    "x": 2440,
+    "y": 452,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "renderArmorOutline",
+     "symbolStart": {
+      "line": 3001,
+      "character": 0
+     },
+     "signature": "renderArmorOutline(...)",
+     "selectionStart": {
+      "line": 3001,
+      "character": 0
+     },
+     "preview": "renderArmorOutline(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch50",
+    "type": "geo",
+    "props": {
+     "w": 210,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "violet",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "renderArmorOutline()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "盔甲描边(逐 cube)"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a2x",
+    "typeName": "shape"
+   },
+   "shape:arch51": {
+    "x": 2440,
+    "y": 556,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "renderElytraOutline",
+     "symbolStart": {
+      "line": 3160,
+      "character": 0
+     },
+     "signature": "renderElytraOutline(...)",
+     "selectionStart": {
+      "line": 3160,
+      "character": 0
+     },
+     "preview": "renderElytraOutline(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch51",
+    "type": "geo",
+    "props": {
+     "w": 218,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "violet",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "renderElytraOutline()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "鞘翅描边"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a2y",
+    "typeName": "shape"
+   },
+   "shape:arch52": {
+    "x": 2440,
+    "y": 660,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "armorOutlineRenderType",
+     "symbolStart": {
+      "line": 3238,
+      "character": 0
+     },
+     "signature": "armorOutlineRenderType(...)",
+     "selectionStart": {
+      "line": 3238,
+      "character": 0
+     },
+     "preview": "armorOutlineRenderType(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch52",
+    "type": "geo",
+    "props": {
+     "w": 242,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "violet",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "armorOutlineRenderType()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "盔甲采样纹理选择"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a2z",
+    "typeName": "shape"
+   },
+   "shape:arch53": {
+    "x": 2440,
+    "y": 764,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "isAzureLibArmor",
+     "symbolStart": {
+      "line": 3907,
+      "character": 0
+     },
+     "signature": "isAzureLibArmor(...)",
+     "selectionStart": {
+      "line": 3907,
+      "character": 0
+     },
+     "preview": "isAzureLibArmor(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch53",
+    "type": "geo",
+    "props": {
+     "w": 186,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "violet",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "isAzureLibArmor()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "AzureLib 盔甲检测"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a3a",
+    "typeName": "shape"
+   },
+   "shape:arch54": {
+    "x": 2440,
+    "y": 868,
+    "rotation": 0,
+    "isLocked": false,
+    "opacity": 1,
+    "meta": {
+     "relativePath": "src/main/java/com/enchantedoutlines/mod/outline/OutlineRenderer.java",
+     "symbolName": "isGeckoLibArmor",
+     "symbolStart": {
+      "line": 4091,
+      "character": 0
+     },
+     "signature": "isGeckoLibArmor(...)",
+     "selectionStart": {
+      "line": 4091,
+      "character": 0
+     },
+     "preview": "isGeckoLibArmor(...)",
+     "containerName": "OutlineRenderer"
+    },
+    "id": "shape:arch54",
+    "type": "geo",
+    "props": {
+     "w": 186,
+     "h": 56,
+     "geo": "ellipse",
+     "dash": "solid",
+     "growY": 0,
+     "url": "",
+     "scale": 1,
+     "color": "violet",
+     "labelColor": "black",
+     "fill": "solid",
+     "size": "m",
+     "font": "draw",
+     "align": "middle",
+     "verticalAlign": "middle",
+     "richText": {
+      "type": "doc",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "isGeckoLibArmor()"
+         }
+        ]
+       },
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "GeckoLib 盔甲检测"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "parentId": "page:page",
+    "index": "a3b",
+    "typeName": "shape"
+   }
+  },
+  "schema": {
+   "schemaVersion": 2,
+   "sequences": {
+    "com.tldraw.store": 5,
+    "com.tldraw.asset": 1,
+    "com.tldraw.camera": 1,
+    "com.tldraw.document": 2,
+    "com.tldraw.instance": 26,
+    "com.tldraw.instance_page_state": 5,
+    "com.tldraw.page": 1,
+    "com.tldraw.instance_presence": 6,
+    "com.tldraw.pointer": 1,
+    "com.tldraw.shape": 4,
+    "com.tldraw.user": 1,
+    "com.tldraw.asset.image": 6,
+    "com.tldraw.asset.video": 5,
+    "com.tldraw.asset.bookmark": 2,
+    "com.tldraw.shape.group": 0,
+    "com.tldraw.shape.text": 4,
+    "com.tldraw.shape.bookmark": 2,
+    "com.tldraw.shape.draw": 5,
+    "com.tldraw.shape.geo": 11,
+    "com.tldraw.shape.note": 13,
+    "com.tldraw.shape.line": 5,
+    "com.tldraw.shape.frame": 1,
+    "com.tldraw.shape.arrow": 8,
+    "com.tldraw.shape.highlight": 4,
+    "com.tldraw.shape.embed": 4,
+    "com.tldraw.shape.image": 5,
+    "com.tldraw.shape.video": 4,
+    "com.tldraw.binding.arrow": 1
+   }
+  }
+ },
+ "session": {
+  "version": 0,
+  "currentPageId": "page:page",
+  "exportBackground": true,
+  "isFocusMode": false,
+  "isDebugMode": false,
+  "isToolLocked": false,
+  "isGridMode": false,
+  "pageStates": [
+   {
+    "pageId": "page:page",
+    "camera": {
+     "x": 1370.0,
+     "y": 858.0,
+     "z": 0.35
+    },
+    "selectedShapeIds": [],
+    "focusedGroupId": null
+   }
+  ]
+ }
+}
