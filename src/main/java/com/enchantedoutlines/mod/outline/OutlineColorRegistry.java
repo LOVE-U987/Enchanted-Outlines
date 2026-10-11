@@ -22,6 +22,7 @@ public final class OutlineColorRegistry {
     private static final Map<ResourceLocation, Integer> ITEM_COLORS = new HashMap<>();
     private static final Map<ResourceLocation, Float> ITEM_THICKNESS = new HashMap<>();
     private static final Set<ResourceLocation> DISABLED_ITEMS = new HashSet<>();
+    private static final Set<ResourceLocation> SOLID_ITEMS = new HashSet<>();
 
     private OutlineColorRegistry() {
     }
@@ -46,6 +47,16 @@ public final class OutlineColorRegistry {
         DISABLED_ITEMS.add(item);
     }
 
+    /**
+     * 强制某个物品的描边恒为纯色(即使光影模式开着混色)。
+     * <p>
+     * 逐物品覆盖(与配置 {@code solidColorItems} 等效,程序化优先):不开光影时
+     * 所有描边本就恒为纯色,本注册只在光影兼容模式的混色决策里被查询。
+     */
+    public static void registerItemSolid(ResourceLocation item) {
+        SOLID_ITEMS.add(item);
+    }
+
     // ==================== 内部查询(包内可见,由 ColorResolver 调用) ====================
 
     static Integer enchantmentColor(ResourceLocation enchantment) {
@@ -62,5 +73,9 @@ public final class OutlineColorRegistry {
 
     static boolean isItemDisabled(ResourceLocation item) {
         return DISABLED_ITEMS.contains(item);
+    }
+
+    static boolean isItemSolid(ResourceLocation item) {
+        return SOLID_ITEMS.contains(item);
     }
 }

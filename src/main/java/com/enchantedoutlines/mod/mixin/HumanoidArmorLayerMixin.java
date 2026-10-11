@@ -79,11 +79,19 @@ public abstract class HumanoidArmorLayerMixin {
             if (thickness <= 0f) {
                 continue;
             }
+            // 逐物品覆盖标记:深层混色决策经此查询 solidColorItems(每槽位更新)
+            OutlineRenderer.markOutlinedItem(stack);
             try {
                 OutlineRenderer.INSTANCE.renderGeckoLibArmorOutline(
                         pose, stack, entity, slot, color, thickness, baseModel);
             } catch (Throwable ignored) {
                 // 描边是附加效果,失败不影响本体渲染
+            } finally {
+                // ⚠️ 批次闭合铁律(2026-09-25,"头顶巨大模型"根因之一):描边中途异常会把
+                // 半写脏批留在共享缓冲里,下一次 endBatch 会在错误的渲染阶段/坐标系画出。
+                // finally 强制 flush(空批 no-op),保证描边批次绝不跨渲染阶段滞留。
+                OutlineRenderer.INSTANCE.flushOutlineBatch();
+                OutlineRenderer.clearOutlinedItem();
             }
         }
     }
@@ -119,6 +127,8 @@ public abstract class HumanoidArmorLayerMixin {
         if (thickness <= 0f) {
             return;
         }
+        // 逐物品覆盖标记:深层混色决策经此查询 solidColorItems
+        OutlineRenderer.markOutlinedItem(stack);
         // ⚠️ GeckoLib 盔甲:GeckoLib 的 HumanoidArmorLayerMixin(WrapWithCondition on render)
         // 会拦截 renderArmorPiece 调用并 cancel → 正常情况下本 12 参 HEAD 不会触发;GeckoLib
         // 盔甲描边由 render 方法 HEAD 注入(enchantedoutlines$geckoLibArmorOutline)处理。这里
@@ -137,8 +147,18 @@ public abstract class HumanoidArmorLayerMixin {
             @SuppressWarnings({"rawtypes", "unchecked"})
             HumanoidModel parent = (HumanoidModel) ((HumanoidArmorLayer<?, ?, ?>) (Object) this).getParentModel();
             parent.copyPropertiesTo(armorModel);
-            OutlineRenderer.INSTANCE.renderAzureLibArmorOutline(
-                    pose, stack, entity, slot, color, thickness, armorModel);
+            try {
+                OutlineRenderer.INSTANCE.renderAzureLibArmorOutline(
+                        pose, stack, entity, slot, color, thickness, armorModel);
+            } catch (Throwable ignored) {
+                // 描边是附加效果:失败不影响本体渲染(原实现无 catch,异常会上抛崩溃,
+                // 与其他入口统一为静默)
+            } finally {
+                // ⚠️ 批次闭合铁律(2026-09-25):finally 强制 flush(空批 no-op),
+                // 描边批次绝不跨渲染阶段滞留
+                OutlineRenderer.INSTANCE.flushOutlineBatch();
+                OutlineRenderer.clearOutlinedItem();
+            }
             return;
         }
         ArmorMaterial material = armorItem.getMaterial().value();
@@ -171,6 +191,17 @@ public abstract class HumanoidArmorLayerMixin {
         HumanoidModel parent = (HumanoidModel) ((HumanoidArmorLayer<?, ?, ?>) (Object) this).getParentModel();
         parent.copyPropertiesTo(outlineModel);
 
-        OutlineRenderer.INSTANCE.renderArmorOutline(pose, outlineModel, texture, color, thickness, slot);
+        try {
+            OutlineRenderer.INSTANCE.renderArmorOutline(pose, outlineModel, texture, color, thickness, slot);
+        } catch (Throwable ignored) {
+            // 描边是附加效果:失败不影响本体渲染(原实现无 catch,异常会上抛崩溃,
+            // 与其他入口统一为静默)
+        } finally {
+            // ⚠️ 批次闭合铁律(2026-09-25,"头顶巨大模型"根因之一):描边中途异常会把
+            // 半写脏批留在共享缓冲里,下一次 endBatch 会在错误的渲染阶段/坐标系画出。
+            // finally 强制 flush(空批 no-op),保证描边批次绝不跨渲染阶段滞留。
+            OutlineRenderer.INSTANCE.flushOutlineBatch();
+            OutlineRenderer.clearOutlinedItem();
+        }
     }
 }

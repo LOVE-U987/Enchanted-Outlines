@@ -155,7 +155,7 @@ public final class ColorResolver {
         return Config.defaultColorArgb();
     }
 
-    /** 物品描边厚度 (像素，可浮点);0 表示不画。 */
+    /** 物品描边厚度 (像素，可浮点);0 表示不画。程序化注册 > 配置映射 > 全局配置。 */
     public static float thickness(ItemStack stack) {
         ResourceLocation itemId = itemId(stack);
         if (itemId != null) {
@@ -163,11 +163,15 @@ public final class ColorResolver {
             if (t != null) {
                 return t;
             }
+            t = Config.itemThickness(itemId);
+            if (t != null) {
+                return t;
+            }
         }
         return Config.THICKNESS.get().floatValue();
     }
 
-    /** 盔甲描边厚度 (像素，可浮点);0 表示不画。 */
+    /** 盔甲描边厚度 (像素，可浮点);0 表示不画。程序化注册 > 配置映射 > 全局配置。 */
     public static float armorThickness(ItemStack stack) {
         ResourceLocation itemId = itemId(stack);
         if (itemId != null) {
@@ -175,8 +179,26 @@ public final class ColorResolver {
             if (t != null) {
                 return t;
             }
+            t = Config.itemThickness(itemId);
+            if (t != null) {
+                return t;
+            }
         }
         return Config.ARMOR_THICKNESS.get().floatValue();
+    }
+
+    /**
+     * 该物品的描边是否被强制为纯色 (逐物品覆盖)。
+     * <p>
+     * 程序化注册 ({@link OutlineColorRegistry#registerItemSolid}) > 配置
+     * {@code solidColorItems}。不开光影时所有描边本就恒为纯色,本判断只在光影
+     * 兼容模式的混色决策里被查询(逐物品覆盖:某物品即使全局开混色也恒纯色)。
+     *
+     * @param itemId 物品注册 ID(可为 null,无上下文时返回 false)
+     * @return true = 该物品描边恒为纯色
+     */
+    public static boolean isSolidOutline(ResourceLocation itemId) {
+        return itemId != null && (OutlineColorRegistry.isItemSolid(itemId) || Config.isItemSolid(itemId));
     }
 
     private static int colorFor(Holder<Enchantment> holder, int fallback) {

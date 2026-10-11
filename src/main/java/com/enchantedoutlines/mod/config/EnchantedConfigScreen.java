@@ -115,11 +115,16 @@ public class EnchantedConfigScreen extends Screen {
             y = addLongTextRow(y, "itemColors", Config.ITEM_COLORS, widgetX);
             y = addLongTextRow(y, "enabledItems", Config.ENABLED_ITEMS, widgetX);
             y = addLongTextRow(y, "disabledItems", Config.DISABLED_ITEMS, widgetX);
+            y = addLongTextRow(y, "itemThicknesses", Config.ITEM_THICKNESSES, widgetX);
+            y = addLongTextRow(y, "solidColorItems", Config.SOLID_COLOR_ITEMS, widgetX);
         } else if (selectedCategory == 2) { // advanced
             y = addDoubleRow(y, "bewlr3dScale", Config.BEWLR_3D_SCALE, 0.05, 1.0, widgetX);
             y = addBooleanRow(y, "bewlr3dPerCube", Config.BEWLR_3D_PER_CUBE, widgetX);
+            y = addBooleanRow(y, "bewlrCaptureV2", Config.BEWLR_CAPTURE_V2, widgetX);
+            y = addBooleanRow(y, "bewlrGlobalBufferSwap", Config.BEWLR_GLOBAL_BUFFER_SWAP, widgetX);
             y = addBooleanRow(y, "taczCompat", Config.ENABLE_TACZ_COMPAT, widgetX);
             y = addBooleanRow(y, "hazenCompat", Config.ENABLE_HAZEN_COMPAT, widgetX);
+            y = addLongTextRow(y, "bewlrNamespaceAdapters", Config.BEWLR_NAMESPACE_ADAPTERS, widgetX);
             y = addMergeModeRow(y, widgetX);
         } else { // experimental
             y = addBooleanRow(y, "enableRPGRainbow", Config.ENABLE_RPG_RAINBOW, widgetX);

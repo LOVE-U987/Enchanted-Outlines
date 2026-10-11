@@ -38,3 +38,7 @@ run/
 **/src/generated/**/.cache/
 repo/
 !**/src/**/repo/
+
+# VERIFY 验证工具 (tools/)
+__pycache__/
+*.pyc

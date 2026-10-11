@@ -1,13 +1,58 @@
 # 通用模型适配算法设计文档
 
-> 📌 **文档状态(2026-09-06 重构后)**:本设计文档的核心"渲染捕获"方案已在
-> `OutlineRenderer` 落地(`resolveBewlrRenderer` / `captureBewlrGeometry` /
-> `renderBewlrCapturedOutline` / `CaptureSource`)。但后续实测与用户决策导致部分
-> 计划<b>已中止</b>:TACZ 与 Hazen'N Stuff 的 BEWLR/Geo 描边兼容已<b>整体停用</b>
-> (宁可无描边,不接受错位/错误轮廓);遗留的 `com.enchantedoutlines.mod.api`
-> 适配层(ItemModelRegistry/ShapeDetector/RenderPipeline 等)确认是零引用死代码,
-> 已<b>整包删除</b>。因此文中 §3.4.4 兼容矩阵、§4.1 文件规划里涉及这两家的条目
-> 仅作历史参考,<b>不再作为实现目标</b>。本文档保留作为"通用渲染捕获"的设计依据。
+> 📌 **文档状态(2026-10-02 更新)** —— 从"通用渲染捕获"的设计依据,已演进为
+> **当前架构的完整记录 + 下一步路线图**。核心演进(全部已落地并验证):
+> <ol>
+>   <li><b>捕获流派(第一代)</b>:调模组自己的 `renderByItem`,用 `CaptureSource`
+>       拦截输出顶点 —— 零反射、与本体 100% 贴合(旧 §3.4 的落地)。</li>
+>   <li><b>v2 规范化捕获</b>(`BewlrCapture.renderCapturedV2`):<b>空 PoseStack
+>       (identity)</b> 捕获 → <b>本地模型空间</b>几何(与相机/GUI 像素空间无关)→
+>       全 context 统一守卫(span>64 / |中心|>16,根治"头顶巨大模型")→ 兄弟路径
+>       像素语义外扩 → 真实 pose 矩阵重放(按铁律 6.9)。</li>
+>   <li><b>全局缓冲防护统一</b>(2026-10-02 审计升级):渲染器直写全局 bufferSource
+>       (TACZ BedrockModel.render 型)→ 捕获窗口内恒替换 RenderBuffers.bufferSource
+>       (统一并入 capturePlain,v2 identity / v1 真实 pose 双语义)—— 未替换时渲染器
+>       会把顶点漏进真实管线(错位图形),统一后 TACZ 由 v2 直接捕获(每帧 1 次渲染
+>       调用);专项复刻路径删除(实测"复刻之外的变换来源",成本失控)。</li>
+>   <li><b>BEWLR 面族拆分(行为保持)</b>:`BewlrCapture`/`LionfishOutline`/
+>       `TaczOutline`/`GeoOutline`/`BewlrModelResolver` 五个同包子模块,OutlineRenderer
+>       保留核心管线与 BEWLR 派发链。</li>
+>   <li><b>行业情报统合</b>(2026-10-02):从同行 Enchantment Glint Outline(CC0,106 万
+>       下载)反编译 —— 扁平 <b>4 对角环</b>(`DIAG_OFFSETS`,绘制量减半、边中点
+>       alpha 更均匀)+ <b>外扩 ε 推挤</b>(`NORMAL_EPSILON`,防 z-fighting)。完整
+>       对照见知识库「项目经验」《[2026-10-02] 行业情报》。</li>
+>   <li><b>不开光影强制纯色</b>(2026-10-02,用户决策):扁平 mix / 盔甲 blend 加
+>       `needVanillaShaderFallback` 门禁 —— 不开光影代码级强制纯色(无视混色配置),
+>       混色仅光影兼容模式依据配置(默认 true 不变)。</li>
+> </ol>
+> 旧的 `com.enchantedoutlines.mod.api` 适配层(零引用死代码)已整包删除(仅作历史参考)。
+
+## 现状与下一步路线(2026-10-02)
+
+### 现状
+
+- **通用算法已覆盖全部 BEWLR**:任意模组统一走 v2 捕获(全局缓冲防护并入,直写全局
+  缓冲型);专项只作"保真/性能"选配(TACZ Bedrock / Lionfish 逐 cube / Geo 贴图 / 静态
+  字段解析)。守卫、节流诊断(swap-stats / flat)、缓存失效、批次闭合铁律、VERIFY 门禁
+  全部就位。
+- 同行明示放弃自绘 BEWLR("前提是不自绘渲染")——本项目的捕获 + 全局缓冲防护超越
+  行业标准(1.21.1 上无先例),且 TACZ 这类"直写全局缓冲"的渲染器也被统一防护覆盖。
+
+### 下一步(用户指定)
+
+1. **逐物品覆盖(per-item overrides)** ✅ **已落地(2026-10-02)** —— 逐物品厚度
+   (`itemThicknesses` 映射,程序化 > 配置 > 全局)+ 逐物品强制纯色(`solidColorItems`
+   列表 + `registerItemSolid`,仅光影模式混色决策生效);深层决策点经
+   `CURRENT_OUTLINED_ITEM` ThreadLocal 传递。
+2. **namespace → adapter 配置注册表** ✅ **已落地(2026-10-02)** ——
+   Config 新增 `bewlrNamespaceAdapters(namespace=kind)` 映射 + 解析缓存 + invalidateCache;
+   OutlineRenderer 派发链提取 `renderResolverFallback` 方法,dispatch 按注册表
+   查询适配器: `off`→跳过、`legacy`→反射/Geo优先→捕获、`capture`(默认)→捕获优先→反射/Geo。
+   未配置的命名空间走默认 capture 优先链。TACZ/Hazen 粗粒度 `enable*Compat` 叠加生效。
+   新模组默认走通用捕获,出问题玩家改配置即可选路径,不再改代码。
+3. **Sodium/Embeddium 兼容观察** —— 同行有专属 sodium mixin(模型渲染被 Sodium
+   替换);本项目 BakedModel API(`collectQuads`)可能受影响,先观察用户环境是否
+   有冲突,出现再写专属 mixin。
 
 ## 1. 概述
 

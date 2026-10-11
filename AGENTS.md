@@ -16,6 +16,25 @@
   写入 `NativeImage.setPixelRGBA`。`NativeImage.read` 只可用于已确认 RGBA 格式的图片。
 - 参考实现:`OutlineRenderer.shapeTextureForLocation`。
 
+### 1.5 CPU 端读贴图必须 mcmeta 感知;序列图只取首帧
+- **事故(2026-09-25, v0.2.1)**:Hazen 序列图武器(volcano 64×320=5 帧等,`.png.mcmeta`
+  逐帧动画)描边渲染成<b>整张 sheet 全帧并集巨块</b>。geo 模型 UV 空间只有单帧,本体
+  GPU 采样逐帧轮换的活纹理;描边 CPU 端 ImageIO 读原始 PNG 文件 = 整张 sheet,GPU 路径
+  绑定的注册纹理同样是整张 sheet(AzureLib 自管逐帧)→ 三种采样模式全中招。
+- **规则**:
+  - 任何 CPU 端读独立纹理 PNG(形状烘焙/透明检测)一律经 `readTextureFrame`:
+    ImageIO(铁律 1)+ `cropAnimationFrame0`(解析 `.png.mcmeta` animation,取首帧);
+  - GPU 采样模式(emissive/自定义 shader)对 mcmeta 动画纹理经 `animatedSampleTexture`
+    <b>按注册纹理活性分流</b>(2026-09-26 修订):注册纹理是 AzureLib AnimatableTexture
+    (管线每帧 setAndUpdate 推 GPU 帧)→ <b>绑原 location</b>,描边采样当前帧、与本体
+    动画<b>同步</b>(一律烘帧 0 会让描边静止脱节,用户实测;判定时的 getTexture 还会
+    触发 AzureLib mixin 建立动画纹理,治愈本体注册链);普通 SimpleTexture(整张
+    sheet、无 mixin 推帧)→ 绑首帧烘焙动态纹理(缓存登记 invalidateCaches);
+    非序列图零开销;
+  - atlas 精灵版(`shapeTextureFor`)对动画精灵裁 `contents` 尺寸首帧(同源加固);
+  - 首帧烘焙是静态近似:仅用于"无 mixin 推帧"的死注册;活动画路径描边实时同步。
+    混色关的 CPU 烘焙形状路径(readTextureFrame)恒为帧 0 静态(不随帧动画),接受。
+
 ### 2. 亮度计算必须归一化到 0..1
 - **事故(同上)**:`averageLuma` 的 Rec.601 加权平均后忘了 `÷255`,`exposureScale` 算出
   `scale≈113.9` → RGB 乘巨大值溢出 32 位 int → 颜色完全错乱。
@@ -65,6 +84,18 @@
   - **只缓存与帧无关的输入**(顶点坐标/UV/法线),帧内仍做矩阵变换;
   - 优化后必须在开启/关闭光影两种模式下验证形状与颜色不变。
 
+### 4.5 扁平描边 4 对角环 + 外扩 ε 推挤(2026-10-02 统合自 Enchantment Glint Outline)
+- **来源**: 赛道头部模组 Enchantment Glint Outline(CC0,106 万下载)反编译源码
+  (`thickenQuad`/`growVert`);完整行业情报见知识库「项目经验」《[2026-10-02] 行业情报》。
+- **4 对角环**:`DIAG_OFFSETS`(4 对角)替代旧 8 方向 —— 对角拷贝(位移 ±t)任一轴
+  范围与基向拷贝一致(t ≤ 面片半径时基向 4 拷贝纯冗余)→ 环范围不变、绘制量减半、
+  边中点双重 alpha 叠加消失。极端 t > 面片半径有细缝,接受(非错位)。
+- **ε 推挤**:`NORMAL_EPSILON`(1e-4 模型单位)—— 外扩顶点额外沿法线推一点,描边面
+  与本体表面永不共面(防 z-fighting 边界情况)。已应用于 `renderVertexNormalExpand` +
+  捕获发射器;Lionfish/Geo/armor 路径可后续按需加。
+- **教训(方法论)**:下载 JAR 反编译(Modrinth CDN 可达,绕墙)是读同行源码的可靠
+  路径;CC0 许可证学习借鉴无法律风险。
+
 ### 5. 反射缓存的字段查找
 - `spriteOriginalImage` 的 `originalImage` 字段:用 `findOriginalImageField` **沿父类链查找**
   + 按类缓存 Field;直接用 `getDeclaredField` 遇 SpriteContents 子类会 NoSuchFieldException。
@@ -95,7 +126,8 @@
   灾变)→ 默认<b>逐 cube 顶点法线外扩</b>(v0.1.7+),整体包围盒放大壳降级为
   回退路径(见下方铁律)。模型字段按物品路径大写 + `_MODEL` 从适配类静态字段
   读取(`ESItemStackRenderer`/`CMItemstackRenderer`),缺失时触发一次 BEWLR 渲染初始化。
-  新模组 BEWLR 适配 = 把持有模型静态字段的类加入 `BEWLR_MODEL_HOLDER_CLASSES`。
+  新模组 BEWLR 适配 = 把持有模型静态字段的类加入 `BewlrModelResolver.BEWLR_MODEL_HOLDER_CLASSES`
+  (2026-09-25 拆分后该表已移至 `outline/BewlrModelResolver`,见"BEWLR 子模块结构")。
 - **BEWLR 内部预变换铁律**(违反即描边错位/镜像):模组 BEWLR 渲染器在 display
   transform 之后、renderToBuffer 之前会对模型套一层内部预变换(实测:永恒星光
   `scale(1,-1,-1)`;灾变 `translate(0.5,0.5,0.5)+scale(1,-1,-1)`)。描边必须在<b>同一
@@ -127,7 +159,7 @@
   静态字段(灾变 THE_IMMOLATOR_TEXTURE 等、永恒星光 CrescentSpearModel.TEXTURE),
   拿不到回退 WHITE_TEXTURE。
 - **BEWLR 3D 描边配置化**:3D 描边几何放大系数 —— 读 `Config.BEWLR_3D_SCALE`
-  (默认 0.3)而非硬编码;`Config.BEWLR_3D_PER_CUBE`
+  (默认 0.1)而非硬编码;`Config.BEWLR_3D_PER_CUBE`
   (默认 true)控制灾变 Lionfish 用逐 cube 顶点法线外扩(等厚贴身)还是整体放大壳
   (端部膨胀)。改动缩放需同时看混色/曝光配置。
 - **GUI/GROUND/FIXED 必须优先平面描边铁律**(v0.1.7,违反即背包/掉落物轮廓错位):
@@ -164,6 +196,14 @@
   手持分支检查标记跳过(避免"静态描边 + 动画描边"重复);GROUND/FIXED 不经
   ItemInHandRenderer,仍由 `ItemRendererMixin` 处理。模型解析 seed 必须与本体
   `renderStatic` 一致(`entity.getId() + context.ordinal()`)。
+- **逐物品覆盖决策点(v0.2.0,2026-10-02)**:per-item 厚度(`itemThicknesses` 映射,
+  程序化 `registerItemThickness` > 配置 > 全局)与 per-item 强制纯色(`solidColorItems`
+  列表 + `registerItemSolid`,仅光影模式混色决策生效)。深层混色决策(flat mix /
+  armor 光影纹理选择 / 3D fallback 纯白判定)拿不到 stack → 经
+  `CURRENT_OUTLINED_ITEM` ThreadLocal 传递(7 个 mixin 描边入口 set / finally clear,
+  与 IN_GUI_RENDER 同款模式)—— 新增混色决策点必须用
+  `ColorResolver.isSolidOutline(currentOutlinedItem())` 接线;新增 mixin 入口必须
+  set/clear 该标记。
 - **渲染缓存必须随进出世界/资源重载清理(v0.1.7+,违反即多人"退出后重进渲染错误")**:
   新增缓存必须登记到 `OutlineRenderer.invalidateCaches()`(统一清空 shapeTextures /
   lumaCache / RenderType 缓存 / shieldModel / tridentModel / 几何缓存);资源重载
@@ -173,33 +213,171 @@
   `vertexColor.rgb × mix(1, texel.rgb, OutlineBlend)`。扁平"形状纹理"路径
   `renderFlatOutlineShape` 必须走 blend=1(顶点色是白、色烘焙进贴图),否则白色描边;
   盔甲/鞘翅/投掷物自定义 shader 路径(`armorOutlineRenderType`)按
-  `Config.ARMOR_PIXEL_COLOR_GLINT` 设 blend。uniform 全局、每批 flush 前设置。
-- **TACZ 专项(2026-09-06 重启用,`Config.ENABLE_TACZ_COMPAT` 默认 true)**:TACZ 枪械
-  是自绘 Bedrock BEWLR(`GunItemRendererWrapper`),几何不在 BakedModel,走通用 BEWLR
-  捕获(`renderBewlrCapturedOutline`,调 `renderByItem` 捕获顶点)。Hazen 用
-  `Config.ENABLE_HAZEN_COMPAT`。姿态错位可关对应开关回"无描边"。
+  `Config.ARMOR_PIXEL_COLOR_GLINT` 设 blend(<b>2026-10-02 语义修正,用户决策:
+  不开光影时代码级强制纯色(blend 恒 0、扁平 mix 恒 false,无视混色开关),混色仅在
+  光影兼容模式依据配置(默认 true 不变)</b>)。uniform 全局、每批 flush 前设置。
+- **TACZ 专项(v2.1 定稿,`Config.ENABLE_TACZ_COMPAT` 默认 true)**:TACZ 枪械是自绘
+  Bedrock BEWLR(`GunItemRendererWrapper`),几何不在 BakedModel,且其
+  `BedrockModel.render` <b>绕过传入的 MultiBufferSource 直接写全局共享
+  bufferSource</b> —— 逐层复刻路径(四层前置变换)经实测仍错位,已删除;全局缓冲替换
+  已统一并入捕获(2026-10-02,`BewlrCapture.capturePlain`:捕获窗口内恒替换
+  RenderBuffers.bufferSource,直写全局的渲染链被整体捕获,TACZ 由 v2 直接捕获
+  且不再泄漏/重复渲染,完整渲染链从构造上与本体一致);GUI 本体
+  是 2D slot 贴图平面,走 v2.1 平坦几何<b>贴图形状描边</b>(捕获 UV+纹理,枪形轮廓);
+  第一人称渲染器读相机,派发层直接跳过。Hazen 用 `Config.ENABLE_HAZEN_COMPAT`。
+  姿态错位可关对应开关回"无描边"。
 捕获顶点被抬到相机空间 → 绕 AABB 放大会画成"天上巨大枪模、本体无描边";所以
   TACZ 第一人称明确不走捕获(return false),GUI/FIXED/GROUND 仍捕获贴合。所有捕获
-  统一有 `CAPTURE_MAX_SPAN`(64 模型单位)尺寸守卫,捕获到异常大的包围盒一律跳过
-  (宁可无描边,不画错位巨壳)。姿态错位可经对应开关关闭回到"无描边"。
+  统一有 `CAPTURE_MAX_SPAN`(64 模型单位)尺寸守卫 + 手持 context 中心距离守卫
+  (`CAPTURE_MAX_CENTER_DIST`=16,见铁律 6.8),捕获到异常包围盒一律跳过并走
+  `logCaptureReject` 节流日志留痕(宁可无描边,不画错位巨壳)。姿态错位可经对应
+  开关关闭回到"无描边"。
 - 捕获描边本身已在 `renderBewlrCapturedOutline` 用<b>顶点法线平均外扩</b>(与
   `prepareExpand/renderVertexNormalExpand` 同构):共享顶点沿相邻面法线均匀外扩、
   形状贴合、端部不鼓,替代旧 AABB 中心放大壳(端部膨胀/易错位)。
 - 原则:本体怎么渲染,描边就怎么渲染 —— 一切自定义渲染(模型替换/纹理替换)必须
   走与本体相同的 hook/解析路径,不得硬编码原版假设。
 
+### 6.7 描边批次必须在所有退出路径闭合(违反即"头顶/远处巨大模型")
+- **事故(2026-09-25,v0.2.0)**:描边路径 `getBuffer` 写入顶点后,中途异常被顶层
+  `catch (Throwable ignored)` 吞掉且无 `endBatch`,半写脏批滞留共享 builder
+  (`outlineBuffers` = `MultiBufferSource.immediate`,vanilla 语义:getBuffer 到
+  <b>不同</b> RenderType 时滞留批被<b>当场以当时的 GL 状态/坐标系画出</b>,同
+  RenderType 则续写合并)→ 手持局部空间顶点在世界渲染阶段上屏,表现为"巨大模型
+  出现在玩家头顶/天上"。确凿现场:`renderLionfishInflated` 反射调用模组自己的
+  render,异常被吞无 flush;三个 mixin 顶层 catch 是把一切中途异常变成脏批的总闸门。
+- **规则**:
+  - 所有 mixin 顶层描边入口统一 `try { 描边 } catch (Throwable ignored) {}
+    finally { OutlineRenderer.flushOutlineBatch(); }` —— finally 强制 flush,
+    空批 no-op(正常路径已 endBatch,再 flush 零视觉影响零开销);
+  - 新增描边渲染路径:`getBuffer` 之后的所有出口(提前 return/catch)必须保证该批
+    被 endBatch;易失败操作(反射查找/可访问化)尽量放到 getBuffer <b>之前</b>;
+    必须在 getBuffer 之后反射调用模组代码的,失败分支就地 endBatch(参考
+    `renderLionfishInflated` / `renderTaczBedrockModel`);
+  - "取了 buffer 没写顶点就退出"是空批,vanilla 不绘制,无害;只有"写了顶点未
+    endBatch"才是泄漏。
+
+### 6.8 捕获守卫必须校验"位置"而非只校验"大小";拒绝必须留痕
+- **事故(2026-09-25,v0.2.0)**:`CAPTURE_MAX_SPAN` 只查 AABB 跨度。某些自绘 BEWLR
+  在第一/第三人称把顶点整体抬到相机/世界空间 —— <b>形状不大(跨度<64)但中心离
+  视角原点很远</b>,守卫放行 → 描边壳画在远处 = "巨大模型出现在玩家头顶"。
+- **规则**:`renderBewlrCapturedOutline` 必须同时执行两道守卫,且每次拒绝走
+  `logCaptureReject` 节流诊断日志:
+  - <b>跨度守卫</b>(>64 拒绝)—— 拦"巨大";
+  - <b>手持 context 中心距离守卫</b>(第一/第三人称 |AABB 中心|>16 拒绝;GUI 是
+    像素空间、GROUND/FIXED 可合法离相机数十单位,<b>不适用</b>本守卫)—— 拦"错位";
+  - 节流日志(10s/原因#物品#context,info 级)是<b>常驻诊断</b>而非临时调试代码
+    (铁律 6 的例外:拒绝是低频事件,info 不刷屏),用户报障直接附 latest.log
+    即可定位问题模组与 context。
+
+### 6.9 规范化捕获(v2)铁律(违反即回到"每个模组一套补丁"的老路)
+- **落地(2026-09-25,v0.2.0)**:`BewlrCapture.renderCapturedV2` —— 空 PoseStack
+  (identity)捕获 renderByItem 输出 → 本地模型空间守卫(全 context 统一)→ 兄弟路径
+  像素语义外扩 → 真实 pose 矩阵重放。v1(复制 pose 捕获最终坐标)保留为回退。
+- **规则**:
+  - <b>v2 捕获必须用 identity PoseStack</b>(空栈),禁止把真实 pose 传进捕获 —— 传了
+    就退化回 v1 的"别人家坐标系"问题,守卫全部失效;
+  - <b>v2 守卫在本地空间全 context 统一</b>(span>64 或 |中心|>16 拒绝,GUI 也适用),
+    禁止再加"仅手持/仅 GUI"的 context 例外 —— 本地空间没有那些例外存在的原因;
+  - <b>v2 外扩量必须与兄弟路径像素语义一致</b>:GUI = thickness×THICKNESS_SCALE/16
+    (对齐 renderGui3dInflate),世界 context = thickness×THICKNESS_SCALE×
+    BEWLR_3D_SCALE(对齐 Lionfish renderPerCube);禁止恢复 ∝maxSpan;
+  - <b>重放必须用真实 pose 矩阵 transformPosition</b>(与 renderVertexNormalExpand
+    同构),禁止让顶点"自带变换";
+  - <b>全局缓冲防护(统一,2026-10-02 审计升级)</b>:<b>所有</b>捕获(capturePlain)
+    的调用窗口内恒替换 RenderBuffers.bufferSource → CaptureBufferSource,finally
+    还原 —— 直写全局型渲染器(TACZ BedrockModel.render)无论写传入 buffer 还是取
+    全局都进捕获器:<b>未替换时它们会把顶点漏进真实渲染管线</b>(identity 捕获泄漏
+    本地坐标 → flush 时被解释为相机/GUI 空间 → 视野错位图形;real-pose 捕获重复
+    渲染浪费),且统一后 TACZ 由 v2 直接捕获(每帧 1 次渲染调用,原 v2/v1/v1-swap
+    三次降为一次)。pose 语义按调用方分流:v1 传真实 pose(捕获 = 最终绘制坐标,
+    原样发射零重放);v2 传 identity(本地空间垃圾由守卫拦下,不重试);
+    <b>经 Config.BEWLR_GLOBAL_BUFFER_SWAP 门禁(默认开启;关闭 = 降级纯捕获,
+    直写全局渲染器拿不到几何 → 无描边)</b>,开启后捕获统计走 swap-stats 节流日志;
+  - <b>平坦几何双发射</b>(v2.1):捕获几何单薄一轴(GUI slot 贴片/扁平 2D 武器)→
+    面内 8 方向偏移 + 捕获纹理贴图形状(法线外扩对薄面片屏幕上不可见);立体几何 →
+    顶点法线外扩 + WHITE 纯几何;<b>贴图提取失败禁止退 WHITE</b>(白矩形环 = 实心
+    "方形背景"事故;2026-10-11 起标准路径同源加固:shapeTextureForLocation 读失败
+    返回 null,调用方降级 GPU 采样原纹理;readTextureFrame 三种失败节流留痕)→
+    回退 v1,最终无描边;
+  - <b>混合几何双发射 + 捕获分层(2026-10-11,Hazen 方形/光斑四级根因)</b>:
+    捕获按 RenderType 记录请求顺序(rtOrder)与每 quad 来源层(quadSources)——
+    附魔物品双绘(VertexMultiConsumer glint+main)的<b>跨层重复 = 叠绘</b>(非基础
+    层副本跳过,保留基础层一份),<b>同层重复 = 零厚度贴片正反面</b>(GeckoLib
+    8×8×0 型装饰 quad);混合几何按 quadHash(量化 1e-4,XOR 顺序无关)分类:
+    有体积 quad → 法线外扩,零厚度贴片 → 面内 8 方向 + 贴图 alpha 形状;采样纹理
+    按 getBuffer 顺序取<b>首个非 glint</b> 纹理(<b>glint 层半透明噪声图禁作
+    alpha 遮罩源</b>,否则形状遮罩失效 → 紫色光斑);平坦判定辅以 isFlatGeometry
+    法线平行度(±同轴,18° 锥角);验证信号 = "混合几何双发射"节流日志
+    (solid/zeroThick/overlaySkip/tex 四计数;⚠️ 节流 key 不进日志正文,grep 要
+    grep detail 文本而非 key);
+  - <b>回退边界</b>:v2 捕获为空(渲染器强依赖真实 pose)→ 回退 v1;v2 守卫拒绝
+    (本地空间垃圾)→ <b>不回退 v1</b>(垃圾在 v1 也是垃圾)。
+
 ### 7. 配置界面改动必须失效解析缓存
 - `Config.markChanged()`(配置界面保存)必须调用 `Config.invalidateCache()`,否则颜色/开关
   改动不生效直到重启。解析缓存只在 `ModConfigEvent` 时自动失效。
 
-### 8. 验证工具优先用 Python
-- 贴图格式/alpha 验证用 `tools/check_texture_alpha.py`、`tools/check_png_format.py`、
-  `tools/check_png_trns.py`(基于 Pillow),不要手写 PNG 解码或猜。
-- 截图分析用 `tools/analyze_screenshot.py`(统计描边色像素密度判断实心/轮廓)。
+### 8. 验证工具优先用 Python;提交前必须过 VERIFY 门禁
+- **一键门禁**:`.\verify.bat`(或 `python tools/verify.py`)—— 编译门禁 +
+  上文铁律静态扫描(铁律 1/1.5/2/6/6.7/7/8、缓存登记、mixin 注册)+
+  zh_cn/en_us 配置键一致性。选项:`--no-compile`(跳过 gradle,秒级)、
+  `--only rules`、`--json`、`--list`、`--install-hook`(装 git pre-commit,可选)。
+  确凿违规退出码 1(可用于 CI/pre-commit),启发式提示只告警不阻塞。
+  **改动渲染代码后、提交前先跑它。**
+- **检查本身要自检**:`python tools/verify_selftest.py` —— 向仓库临时注入已知违规,
+  断言每条检查真的能抓到,再无条件还原并复查干净仓库 0 错误。**改动
+  `tools/verify.py` 的检查逻辑后必须跑一次** —— 一个永远通过的检查等于没有检查。
+- 贴图格式/alpha 验证用 `tools/check_png_format.py`(存储形态:索引色+tRNS 高危、
+  序列图帧数)、`tools/check_texture_alpha.py`(alpha 组成 → 形状纹理可用性)、
+  `tools/check_png_trns.py`(tRNS 专项,`--scan <目录>` 批量审计),基于 Pillow,
+  不要手写 PNG 解码或猜。
+- 截图分析用 `tools/analyze_screenshot.py`(统计描边色像素密度判断实心/轮廓;
+  `--expect outline|solid` 可作回归断言,判定不符退出码 1)。
+- ⚠️ VERIFY 只做**静态**验证,**不替代实机跑游戏**(见下方"构建与测试")。
+  渲染视觉结论一律以实机为准,静态门禁只保证"不违反已知铁律 + 能编译"。
+
+## BEWLR 子模块结构(2026-09-25 行为保持拆分,v0.2.0)
+
+`outline.OutlineRenderer` 保留渲染管线核心(shader/uniform/RenderType 工厂/描边缓冲
+`outlineBuffers`/`invalidateCaches` 统一失效)与 BEWLR 统一派发入口
+(`renderBewlrEntityOutline`);BEWLR 家族拆为<b>同包独立类</b>(经构造注入 renderer
+引用访问共享设施,共享成员为包私有):
+
+- `BewlrCapture` —— 通用渲染捕获(任意模组零适配):<b>v2 规范化捕获已落地</b>(见
+  铁律 6.9,`Config.BEWLR_CAPTURE_V2` 默认开启,渲染器强依赖真实 pose 时自动回退
+  v1 旧算法)+ 双守卫(铁律 6.8)+ 节流诊断日志;<b>v2 的迭代只允许改这个类</b>;
+  <b>全局缓冲防护已统一并入 capturePlain</b>(2026-10-02:所有捕获窗口内恒替换
+  RenderBuffers.bufferSource,直写全局渲染器的顶点泄漏/重复渲染根治,见铁律 6.9);
+- `LionfishOutline` —— 灾变(LionfishAPI)逐 cube 顶点法线外扩 / 整体壳回退;
+- `TaczOutline` —— TACZ/Hazen 命名空间判定(纯静态)。TACZ 走捕获(2026-10-02 起
+  v2 直接捕获:全局缓冲防护统一并入 capturePlain;旧 v2.1 identity+重放与复刻路径
+  均因实测错位删除);第一人称仍跳过;
+  受 ENABLE_TACZ_COMPAT / BEWLR_GLOBAL_BUFFER_SWAP 双门禁。namespace 注册表
+	  (Config.bewlrNamespaceAdapters,详见②)可作为该命名空间下任一命名的细粒度
+	  适配控制,在 enableTaczCompat/hazenCompat 总开关之上进一步限制/重排适配路径;
+- `GeoOutline` —— GeckoLib/AzureLib 物品+盔甲(OutlineRenderer 保留 mixin 所需
+  公有门面:`isAzureLibArmor`/`isGeckoLibArmor`/`renderAzureLibArmorOutline`/
+  `renderGeckoLibArmorOutline`)。<b>骨骼列表/纹理不得缓存</b>(2026-09-26:AzureLib/
+  GeckoLib 管线每帧把动画姿态应用到渲染上下文的烘焙模型,缓存解析时刻的骨骼引用
+  → 描边与本体动画脱节;`geoItemModel` 只缓存"种类"判定,每帧重新解析);
+- `BewlrModelResolver` —— 静态字段模型解析(持有类表/灾变精确映射表/预变换类别,
+  纯静态)。
+
+**新模组 BEWLR 适配改哪里**:静态字段模型 → `BewlrModelResolver`;GeckoLib/AzureLib
+骨骼 → `GeoOutline` 自动覆盖不用改;自绘模型(TACZ 型)→ `BewlrCapture` 零适配。
+拆分是<b>行为保持</b>的:渲染语义/批次闭合/缓存清理纪律逐条对照铁律自查;
+mixin 文件与 OutlineRenderer 公有门面签名不得动(mixin 零改动约定)。
 
 ## 构建与测试
 
+- **提交前门禁**:`.\verify.bat` —— 编译 + 铁律静态扫描 + 配置/语言键一致性一步到位
+  (详见铁律 8;秒级,`--no-compile` 更快)。改了检查逻辑就跑
+  `python tools/verify_selftest.py` 自检检查本身。
 - 编译检查:`.\gradlew.bat compileJava`(PowerShell 的 exit code 1 是 gradle stderr 误报,
   看 BUILD SUCCESSFUL)。
 - 运行:`.\gradlew.bat runClient "-PdevArgs=--quickPlaySingleplayer 新的世界"`。
-- 渲染改动必须实际跑游戏验证,不能只编译通过就提交。
+- 渲染改动必须实际跑游戏验证,不能只编译通过就提交。截图后可量化判定:
+  `python tools/analyze_screenshot.py <截图> --color <描边色> --expect outline`
+  (实心/轮廓不符即退出码 1);贴图侧疑问先用 `check_png_format.py` 确认
+  是否"索引色+tRNS"(会导致 alpha 丢失 → 描边变实心)。

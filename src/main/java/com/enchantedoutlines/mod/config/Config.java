@@ -3,6 +3,7 @@ package com.enchantedoutlines.mod.config;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -54,23 +55,31 @@ public final class Config {
 
     /**
      * 附魔光效是否根据物品每个像素的颜色确定 (光影兼容模式)。
+     * <p>
+     * <b>2026-10-02 语义修正(用户决策)</b>:本开关仅<b>光影兼容模式</b>下生效
+     * (混色依据配置);<b>不开光影时代码级强制纯色</b>(renderFlatOutlineShape 的
+     * mix 计算含 needVanillaShaderFallback 门禁,无视本开关)。
      */
     public static final ModConfigSpec.BooleanValue ITEM_PIXEL_COLOR_GLINT = BUILDER
-            .comment("Mix outline color with each item pixel color (shader-compat mode only).",
-                    "附魔光效是否根据物品每个像素的颜色确定 (仅光影兼容模式下生效):",
-                    "true = 描边色与物品贴图像素颜色混合 (扁平物品与 3D 物品均生效，保留物品形状，颜色混合后独特有趣);",
-                    "false = 描边为纯色:扁平物品仍保留物品形状 (需读取贴图 alpha，首次渲染该物品有一次性的小开销),3D 物品形状由几何决定。",
+            .comment("Mix outline color with each item pixel color (shader-compat mode only; no-shader mode is always pure color).",
+                    "附魔光效是否根据物品每个像素的颜色确定 (仅光影兼容模式下生效;不开光影时描边恒为纯色):",
+                    "true = 光影模式下描边色与物品贴图像素颜色混合 (扁平物品与 3D 物品均生效，保留物品形状，颜色混合后独特有趣);",
+                    "false = 光影模式下描边为纯色:扁平物品仍保留物品形状 (需读取贴图 alpha，首次渲染该物品有一次性的小开销),3D 物品形状由几何决定。",
                     "盾牌/三叉戟近似盒模型恒为纯色。")
             .define("itemPixelColorGlint", true);
 
     /**
      * 盔甲/鞘翅/投掷物实体的描边是否与纹理颜色混合 (光影兼容模式)。
+     * <p>
+     * <b>2026-10-02 语义修正(用户决策)</b>:本开关仅<b>光影兼容模式</b>下生效;
+     * <b>不开光影时代码级强制纯色</b>(armorOutlineRenderType 自定义 shader 分支
+     * blend 恒 0,无视本开关)。
      */
     public static final ModConfigSpec.BooleanValue ARMOR_PIXEL_COLOR_GLINT = BUILDER
-            .comment("Mix armor outline color with the armor texture (shader-compat mode only).",
-                    "盔甲/鞘翅/投掷物描边是否与纹理颜色混合 (仅光影兼容模式下生效):",
-                    "true = 采样原纹理 alpha 遮罩 (贴合单层纹理轮廓，颜色与纹理混合);",
-                    "false = 描边为纯描边色 (形状由模型几何决定)。")
+            .comment("Mix armor outline color with the armor texture (shader-compat mode only; no-shader mode is always pure color).",
+                    "盔甲/鞘翅/投掷物描边是否与纹理颜色混合 (仅光影兼容模式下生效;不开光影时描边恒为纯色):",
+                    "true = 光影模式下采样原纹理 alpha 遮罩 (贴合单层纹理轮廓，颜色与纹理混合);",
+                    "false = 光影模式下描边为纯描边色 (形状由模型几何决定)。")
             .define("armorPixelColorGlint", true);
 
     /**
@@ -110,6 +119,47 @@ public final class Config {
                     "false = 整体包围盒放大壳 (旧算法，细长武器端部外扩偏多)。")
             .define("bewlr3dPerCube", true);
 
+    /**
+     * 是否启用 BEWLR 通用捕获算法 <b>v2(规范化捕获,2026-09-25)</b>,默认开启。
+     * <p>
+     * v2:用<b>空 PoseStack(identity)</b> 调模组 renderByItem 捕获,顶点落在渲染器
+     * <b>本地模型空间</b>(与相机/GUI 像素空间无关)→ 守卫全 context 统一(跨度 +
+     * 中心距离,GUI 也适用)、外扩量与兄弟路径像素语义一致(GUI 对齐标准 3D GUI 路径、
+     * 手持对齐 Lionfish 逐 cube 路径)→ 按真实 pose 矩阵重放。渲染器强依赖真实 pose
+     * 时自动回退 v1 旧算法(复制 pose 捕获最终坐标);守卫拒绝(本地空间垃圾)不回退。
+     */
+    public static final ModConfigSpec.BooleanValue BEWLR_CAPTURE_V2 = BUILDER
+            .comment("Use universal BEWLR capture algorithm v2 - normalized capture (default true).",
+                    "BEWLR 通用捕获算法 v2(规范化捕获):",
+                    "true = 用空 PoseStack(identity)捕获 renderByItem 输出,得到与相机/GUI 像素空间",
+                    "无关的本地模型空间几何 —— 守卫全 context 统一(异常巨大/错位几何一律拒绝),",
+                    "描边厚度与其他路径像素语义一致,位置按真实 pose 重放与本体 100% 对齐;",
+                    "渲染器强依赖真实 pose 时自动回退 v1 旧算法。",
+                    "false = 使用 v1 旧算法(复制 pose 捕获最终绘制坐标,仅手持 context 有中心距离守卫)。")
+            .define("bewlrCaptureV2", true);
+
+    /**
+     * 是否启用 BEWLR 捕获的<b>全局缓冲旁路</b>(v1-bypass,2026-09-26 重新设计,默认开启)。
+     * <p>
+     * 某些渲染器(如 TACZ BedrockModel.render)不写传入的 MultiBufferSource,而是
+     * 直接写全局共享 bufferSource —— 普通捕获拿不到几何;旁路 = 捕获期间临时替换
+     * RenderBuffers.bufferSource。<b>2026-09-26 重新设计</b>:旁路改由 v1 路径以
+     * <b>真实 pose</b> 使用(捕获 = 本体最终绘制坐标,原样发射零重放)—— 旧 v2.1 的
+     * identity+重放组合对"读 pose"型渲染器产出假定空间垃圾(2026-09-25 实测 TACZ
+     * "巨大模型错位"回归根因),已移除。开启后旁路捕获的几何统计会走节流日志
+     * (swap-stats)输出;出现错位可关闭本项回到无描边。
+     */
+    public static final ModConfigSpec.BooleanValue BEWLR_GLOBAL_BUFFER_SWAP = BUILDER
+            .comment("Enable global-buffer-swap BEWLR capture (default true, redesigned as v1-bypass).",
+                    "BEWLR 捕获的全局缓冲旁路(2026-09-26 v1-bypass,默认开启):",
+                    "某些渲染器(TACZ BedrockModel.render)绕过传入的 buffer 直接写全局共享 bufferSource,",
+                    "普通捕获拿不到几何;旁路 = 捕获期间临时替换 RenderBuffers.bufferSource。",
+                    "2026-09-26 重新设计:旁路改由 v1 路径以真实 pose 使用(捕获 = 本体最终绘制坐标,",
+                    "原样发射零重放)—— 旧 v2.1 的 identity+重放组合对'读 pose'型渲染器产出假定空间",
+                    "垃圾(2026-09-25 实测'巨大模型错位'回归根因),已移除。开启后旁路捕获统计走",
+                    "swap-stats 节流日志;出现错位可关闭本项回到无描边。")
+            .define("bewlrGlobalBufferSwap", true);
+
     /** 是否启用 Hazen'N Stuff 全武器兼容描边模式 (默认开启)。 */
     public static final ModConfigSpec.BooleanValue ENABLE_HAZEN_COMPAT = BUILDER
             .comment("Enable Hazen'N Stuff full-weapon outline compatibility (default true).",
@@ -129,7 +179,24 @@ public final class Config {
                     "绕捕获到的几何外扩一圈壳; 若某姿态下捕获出现错位可临时关闭此项。",
                     "false = 保持旧行为, TACZ 物品一律不描边 (宁可无描边, 不渲染错位轮廓).",
                     "普通扁平物品与 AzureLib 盔甲不受本开关影响。")
-            .define("enableTaczCompat", false);
+            .define("enableTaczCompat", true);
+
+    /**
+     * 命名空间 → BEWLR 适配器注册表(namespace=kind,2026-10-02 通用化收官)。
+     * <p>
+     * 把派发链的手写 if-else 泛化为<b>配置驱动</b>:每个命名空间可指定适配器优先级,
+     * 新模组出问题改配置即可换路径/关闭,<b>无需改代码</b>。未配置的命名空间走默认
+     * capture 优先链。与 enableTaczCompat / enableHazenCompat 粗粒度开关叠加生效。
+     */
+    public static final ModConfigSpec.ConfigValue<String> BEWLR_NAMESPACE_ADAPTERS = BUILDER
+            .comment("Namespace-to-adapter registry as namespace=kind, comma separated.",
+                    "命名空间 → BEWLR 适配器注册表:namespace=kind，逗号分隔。",
+                    "kind: capture = 捕获优先(默认,描边随动画);legacy = 反射/Geo 直取优先(旧行为);",
+                    "off = 该命名空间一律无描边。未配置的命名空间走默认 capture 优先链。",
+                    "新模组出问题改配置即可换路径/关闭,无需改代码。",
+                    "示例: 'hazennstuff=legacy,tacz=capture,somemod=off'",
+                    "与 enableTaczCompat / enableHazenCompat 粗粒度开关叠加生效。")
+            .define("bewlrNamespaceAdapters", "");
 
     // ==================== RPG 虹灯 ====================
 
@@ -181,6 +248,21 @@ public final class Config {
                     "'minecraft:di*' 禁用路径以 di 开头的物品。")
             .define("disabledItems", "");
 
+    /** 逐物品描边厚度映射 (覆盖全局 thickness,含模组物品) */
+    public static final ModConfigSpec.ConfigValue<String> ITEM_THICKNESSES = BUILDER
+            .comment("Per-item outline thickness as itemid=pixels, comma separated.",
+                    "逐物品描边厚度:itemid=像素数，逗号分隔;覆盖全局 thickness 配置 (含模组物品)。",
+                    "程序化注册 (OutlineColorRegistry.registerItemThickness) 优先于本配置。",
+                    "示例: 'minecraft:diamond_sword=2.5,tacz:modern_kinetic_gun=1.5'")
+            .define("itemThicknesses", "");
+
+    /** 强制纯色描边的物品列表 (即使光影模式开混色也恒纯色;支持通配符) */
+    public static final ModConfigSpec.ConfigValue<String> SOLID_COLOR_ITEMS = BUILDER
+            .comment("Items whose outline is ALWAYS pure color (even in shader-compat mode with mixing on); supports wildcards.",
+                    "强制纯色描边的物品 id，逗号分隔;即使光影模式开着混色,这些物品的描边也恒为纯色。",
+                    "支持通配符：'minecraft:*' 匹配整个命名空间。不开光影时所有描边本就恒为纯色，本列表只在光影模式下生效。")
+            .define("solidColorItems", "");
+
     public static final ModConfigSpec SPEC = BUILDER.build();
 
     private static final Logger LOGGER = LogUtils.getLogger();
@@ -204,8 +286,11 @@ public final class Config {
     private static volatile Integer cachedDefaultColor = null;
     private static volatile Map<ResourceLocation, Integer> cachedEnchantColors = null;
     private static volatile Map<ResourceLocation, Integer> cachedItemColors = null;
+    private static volatile Map<ResourceLocation, Float> cachedItemThicknesses = null;
     private static volatile List<Pattern> cachedEnabledPatterns = null;
     private static volatile List<Pattern> cachedDisabledPatterns = null;
+    private static volatile List<Pattern> cachedSolidPatterns = null;
+    private static volatile Map<String, String> cachedNamespaceAdapters = null;
 
     private Config() {
     }
@@ -215,8 +300,11 @@ public final class Config {
         cachedDefaultColor = null;
         cachedEnchantColors = null;
         cachedItemColors = null;
+        cachedItemThicknesses = null;
         cachedEnabledPatterns = null;
         cachedDisabledPatterns = null;
+        cachedSolidPatterns = null;
+        cachedNamespaceAdapters = null;
     }
 
     /** 默认描边色 (ARGB，完全不透明)。非法值时退回青绿色。 */
@@ -253,6 +341,68 @@ public final class Config {
     /** 物品描边颜色;未配置返回 null。 */
     public static Integer itemColor(ResourceLocation item) {
         return itemColorMap().get(item);
+    }
+
+    /** 物品厚度映射 (ResourceLocation → 像素),未配置返回空表。 */
+    public static Map<ResourceLocation, Float> itemThicknessMap() {
+        Map<ResourceLocation, Float> m = cachedItemThicknesses;
+        if (m == null) {
+            m = parseThicknessMap(ITEM_THICKNESSES.get());
+            cachedItemThicknesses = m;
+        }
+        return m;
+    }
+
+    /** 物品描边厚度 (配置映射 itemThicknesses);未配置返回 null。程序化注册优先于本配置。 */
+    public static Float itemThickness(ResourceLocation item) {
+        return itemThicknessMap().get(item);
+    }
+
+    /** 物品是否被配置强制为纯色描边 (solidColorItems 列表,支持通配符)。 */
+    public static boolean isItemSolid(ResourceLocation item) {
+        List<Pattern> list = cachedSolidPatterns;
+        if (list == null) {
+            list = parseIdPatterns(SOLID_COLOR_ITEMS.get());
+            cachedSolidPatterns = list;
+        }
+        return matchesAny(list, item);
+    }
+
+    /**
+     * 命名空间 → BEWLR 适配器 kind(capture/legacy/off);未配置返回 null。
+     *
+     * @param namespace 命名空间(如 tacz / hazennstuff)
+     * @return 适配器 kind(小写);未配置返回 null(走默认 capture 优先链)
+     */
+    public static String namespaceAdapter(String namespace) {
+        Map<String, String> m = cachedNamespaceAdapters;
+        if (m == null) {
+            m = parseAdapterMap(BEWLR_NAMESPACE_ADAPTERS.get());
+            cachedNamespaceAdapters = m;
+        }
+        String kind = m.get(namespace);
+        return kind != null ? kind.toLowerCase(Locale.ROOT) : null;
+    }
+
+    /** 解析 namespace=kind 逗号分隔映射(键值均小写归一)。 */
+    private static Map<String, String> parseAdapterMap(String raw) {
+        Map<String, String> map = new HashMap<>();
+        if (raw == null) {
+            return map;
+        }
+        for (String part : raw.split(",")) {
+            String seg = part.trim();
+            if (seg.isEmpty()) {
+                continue;
+            }
+            int eq = seg.indexOf('=');
+            if (eq <= 0) {
+                continue;
+            }
+            map.put(seg.substring(0, eq).trim().toLowerCase(Locale.ROOT),
+                    seg.substring(eq + 1).trim().toLowerCase(Locale.ROOT));
+        }
+        return map;
     }
 
     /** 物品是否允许描边 (白名单)。 */
@@ -307,6 +457,36 @@ public final class Config {
                 continue;
             }
             map.put(id, 0xFF000000 | rgb);
+        }
+        return map;
+    }
+
+    /** 解析 id=像素数 逗号分隔映射 (逐物品厚度,值容错小数,负值按 0 处理)。 */
+    private static Map<ResourceLocation, Float> parseThicknessMap(String raw) {
+        Map<ResourceLocation, Float> map = new HashMap<>();
+        if (raw == null) {
+            return map;
+        }
+        for (String part : raw.split(",")) {
+            String seg = part.trim();
+            if (seg.isEmpty()) {
+                continue;
+            }
+            int eq = seg.indexOf('=');
+            if (eq <= 0) {
+                continue;
+            }
+            ResourceLocation id;
+            try {
+                id = ResourceLocation.parse(seg.substring(0, eq).trim());
+            } catch (RuntimeException ignored) {
+                continue;
+            }
+            try {
+                map.put(id, Math.max(0f, Float.parseFloat(seg.substring(eq + 1).trim())));
+            } catch (NumberFormatException ignored) {
+                continue;
+            }
         }
         return map;
     }

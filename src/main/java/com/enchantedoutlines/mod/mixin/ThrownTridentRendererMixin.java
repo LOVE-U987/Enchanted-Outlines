@@ -68,6 +68,8 @@ public abstract class ThrownTridentRendererMixin {
         if (thickness <= 0f) {
             return;
         }
+        // 逐物品覆盖标记:深层混色决策经此查询 solidColorItems
+        OutlineRenderer.markOutlinedItem(stack);
 
         // 复刻 ThrownTridentRenderer.render 开头的旋转(Y 偏航 + Z 俯仰)
         pose.pushPose();
@@ -81,7 +83,15 @@ public abstract class ThrownTridentRendererMixin {
                 cachedTridentRoot = root;
             }
             OutlineRenderer.INSTANCE.renderEntityModelOutline(pose, root, color, thickness);
+        } catch (Throwable ignored) {
+            // 描边是附加效果:失败不影响本体渲染(原实现无 catch,异常会上抛崩溃,
+            // 与其他入口统一为静默)
         } finally {
+            // ⚠️ 批次闭合铁律(2026-09-25,"头顶巨大模型"根因之一):描边中途异常会把
+            // 半写脏批留在共享缓冲里,下一次 endBatch 会在错误的渲染阶段/坐标系画出。
+            // finally 强制 flush(空批 no-op),保证描边批次绝不跨渲染阶段滞留。
+            OutlineRenderer.INSTANCE.flushOutlineBatch();
+            OutlineRenderer.clearOutlinedItem();
             pose.popPose();
         }
     }

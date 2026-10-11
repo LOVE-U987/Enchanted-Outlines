@@ -52,11 +52,19 @@ public abstract class GuiGraphicsMixin {
         // 世界专用 emissive RenderType → 颜色变淡灰(2026-08-31 事故,方块走
         // handOutlineRenderType 恒自定义不受影响,所以"物品灰、方块正常")。
         OutlineRenderer.markGuiRender(true);
+        // 逐物品覆盖标记:深层混色决策(mix/纯白判定)经此查询 solidColorItems
+        OutlineRenderer.markOutlinedItem(stack);
         try {
             GuiGraphics self = (GuiGraphics) (Object) this;
             renderOutlineInner(self, entity, level, stack, x, y, seed, quadSize);
         } catch (Throwable ignored) {
             // 描边是附加效果,任何异常都静默忽略(同时保证不打断方法体 → RETURN 恢复 GUI 标记)
+        } finally {
+            // ⚠️ 批次闭合铁律(2026-09-25,"头顶巨大模型"根因之一):描边中途异常会把
+            // 半写脏批留在共享缓冲里,下一次 endBatch 会在错误的渲染阶段/坐标系画出。
+            // finally 强制 flush(空批 no-op),保证描边批次绝不跨渲染阶段滞留。
+            OutlineRenderer.INSTANCE.flushOutlineBatch();
+            OutlineRenderer.clearOutlinedItem();
         }
     }
 

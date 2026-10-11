@@ -77,11 +77,19 @@ public abstract class ItemInHandRendererMixin {
                                                      int light, CallbackInfo ci) {
         // 标记当前处于 ItemInHandRenderer 上下文,让 ItemRendererMixin 跳过重复描边
         OutlineRenderer.markItemInHandRender(true);
+        // 逐物品覆盖标记:深层混色决策(mix/blend/纯白判定)经此查询 solidColorItems
+        OutlineRenderer.markOutlinedItem(stack);
         try {
             // 描边失败绝不影响本体渲染:内部全链路 try-catch 兜底
             renderItemOutline(entity, stack, context, leftHand, pose);
         } catch (Throwable ignored) {
             // 描边是附加效果,任何异常都静默忽略
+        } finally {
+            // ⚠️ 批次闭合铁律(2026-09-25,"头顶巨大模型"根因之一):描边中途异常会把
+            // 半写脏批留在共享缓冲里,下一次 endBatch 会在错误的渲染阶段/坐标系画出。
+            // finally 强制 flush(空批 no-op),保证描边批次绝不跨渲染阶段滞留。
+            OutlineRenderer.INSTANCE.flushOutlineBatch();
+            OutlineRenderer.clearOutlinedItem();
         }
     }
 

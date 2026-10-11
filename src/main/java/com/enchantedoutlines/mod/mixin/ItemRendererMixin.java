@@ -106,6 +106,8 @@ public abstract class ItemRendererMixin {
         if (thickness <= 0f) {
             return;
         }
+        // 逐物品覆盖标记:深层混色决策(mix/blend/纯白判定)经此查询 solidColorItems
+        OutlineRenderer.markOutlinedItem(stack);
 
         // 复刻 render 方法体的 display 变换 (HEAD 注入时尚未应用)。
         // ⚠️ 必须用 applyTransform 而非手动 getTransforms().apply:资源包可用
@@ -155,7 +157,15 @@ public abstract class ItemRendererMixin {
             } else {
                 OutlineRenderer.INSTANCE.renderHandOutline(model, pose, color, thickness);
             }
+        } catch (Throwable ignored) {
+            // 描边是附加效果:失败不影响本体渲染(原实现无 catch,异常会上抛崩溃,
+            // 与其他入口统一为静默)
         } finally {
+            // ⚠️ 批次闭合铁律(2026-09-25,"头顶巨大模型"根因之一):描边中途异常会把
+            // 半写脏批留在共享缓冲里,下一次 endBatch 会在错误的渲染阶段/坐标系画出。
+            // finally 强制 flush(空批 no-op),保证描边批次绝不跨渲染阶段滞留。
+            OutlineRenderer.INSTANCE.flushOutlineBatch();
+            OutlineRenderer.clearOutlinedItem();
             pose.popPose();
         }
     }
