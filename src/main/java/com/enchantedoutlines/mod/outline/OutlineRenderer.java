@@ -37,6 +37,7 @@ import net.minecraft.client.renderer.block.model.ItemOverrides;
 import net.minecraft.client.renderer.block.model.ItemTransforms;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.client.renderer.texture.SpriteContents;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.resources.model.BakedModel;
@@ -352,6 +353,16 @@ public final class OutlineRenderer {
     private final Map<ResourceLocation, ResourceLocation> animFrameTextures = new HashMap<>();
 
     /**
+     * 序列纹理当前帧号追踪(帧感知描边形状,2026-10-25):SpriteContents → 最近一次
+     * 帧切换的帧格索引。由 {@code SpriteContentsTickerMixin} 在原版
+     * {@code Ticker.tickAndUpload} 的帧上传点记录(帧切换才触发,帧格索引 = 正在
+     * 显示的帧);弱引用,精灵重载后自动回收。供 {@link #shapeTextureFor} 按当前
+     * 帧烘焙描边形状 → 描边随本体序列纹理动画。miss = 帧 0(未 tick 过/单帧纹理,
+     * 与旧行为一致)。登记于 {@link #invalidateCaches}(铁律 6)。
+     */
+    private final Map<SpriteContents, Integer> spriteFrameTracker = new WeakHashMap<>();
+
+    /**
      * 源贴图 location → 平均感知亮度缓存(关闭混色时按物体颜色压暗曝光用)。
      * 同一贴图的不同描边色会各自生成形状纹理,亮度只依赖贴图内容 → 按 location
      * 缓存避免对同一张图反复遍历像素。资源重载(F3+T)时随 {@link #setOutlineShader}
@@ -366,8 +377,21 @@ public final class OutlineRenderer {
      */
     private final Map<BakedModel, ModelGeometry> modelGeometryCache = new WeakHashMap<>();
 
-    /** 形状纹理缓存键:物品贴图 + 描边色(RGB) + 是否压暗曝光 + 是否混物体贴图色(开关切换时缓存失效)。 */
-    private record ShapeKey(ResourceLocation spriteName, int color, boolean reduceExposure, boolean mix) {
+    /** 形状纹理缓存键:物品贴图 + 描边色(RGB) + 是否压暗曝光 + 是否混物体贴图色 + 帧格索引(序列纹理帧感知,2026-10-25)。 */
+    private record ShapeKey(ResourceLocation spriteName, int color, boolean reduceExposure, boolean mix, int frame) {
+    }
+
+    /**
+     * 记录序列纹理当前显示的帧格索引({@code SpriteContentsTickerMixin} 回调)。
+     * <p>
+     * 由原版 {@code SpriteContents$Ticker.tickAndUpload} 的帧上传点调用,帧切换
+     * 才触发;记录值 = 正在显示的帧格。弱引用键,每 tick 每精灵一次,零分配热点。
+     *
+     * @param contents   精灵内容(键)
+     * @param frameIndex 当前显示的帧格索引
+     */
+    public static void recordSpriteFrame(SpriteContents contents, int frameIndex) {
+        INSTANCE.spriteFrameTracker.put(contents, frameIndex);
     }
 
     /**
@@ -585,6 +609,7 @@ public final class OutlineRenderer {
     public void invalidateCaches() {
         this.shapeTextures.clear();
         this.animFrameTextures.clear(); // BUG1:序列图首帧烘焙纹理(动态纹理随重载失效)
+        this.spriteFrameTracker.clear(); // 帧感知:精灵重载后 contents 为新实例,旧记录随弱引用回收,显式清理兜底
         this.lumaCache.clear();
         this.worldOutlineRenderTypes.clear();
         this.armorRenderTypes.clear();
@@ -1416,11 +1441,13 @@ public final class OutlineRenderer {
      *               false = 恒为纯描边色(与方块/3D 几何路径一致,不再压暗)
      * @param mix    true = 烘焙 <b>描边色 × 贴图像素色</b>(GUI 外混物体贴图色,见
      *               {@link #renderFlatOutlineShape});false = 烘焙纯描边色(GUI 内)
+     * @param frame  帧格索引(帧感知形状,2026-10-25):atlas 序列纹理按当前帧烘焙,
+     *               缓存键与注册名含帧号;非序列/独立纹理路径传 0
      * @return 已注册的纹理 location
      */
-    private ResourceLocation shapeTexture(ResourceLocation source, NativeImage src, int color, boolean reduce, boolean mix) {
+    private ResourceLocation shapeTexture(ResourceLocation source, NativeImage src, int color, boolean reduce, boolean mix, int frame) {
         int rgb = color & 0xFFFFFF;
-        ShapeKey key = new ShapeKey(source, rgb, reduce, mix);
+        ShapeKey key = new ShapeKey(source, rgb, reduce, mix, frame);
         ResourceLocation loc = this.shapeTextures.get(key);
         if (loc == null) {
             int w = src.getWidth(), h = src.getHeight();
@@ -1458,7 +1485,7 @@ public final class OutlineRenderer {
             loc = ResourceLocation.fromNamespaceAndPath("enchanted_outlines",
                     "shape/" + source.getNamespace() + "/"
                             + source.getPath().replace('/', '_') + "_"
-                            + Integer.toHexString(rgb) + (mix ? "_mix" : ""));
+                            + Integer.toHexString(rgb) + (mix ? "_mix" : "") + "_f" + frame);
             Minecraft.getInstance().getTextureManager().register(loc, new DynamicTexture(img));
             this.shapeTextures.put(key, loc);
         }
@@ -1467,6 +1494,10 @@ public final class OutlineRenderer {
 
     /**
      * 扁平物品版形状纹理:从 atlas 精灵取原图像素后走统一入口 {@link #shapeTexture}。
+     * <p>
+     * <b>帧感知(2026-10-25)</b>:序列纹理按 {@link #spriteFrameTracker} 记录的当前
+     * 帧格索引烘焙形状,描边随本体动画换帧;缓存键含帧号,帧切换时重烘(每精灵帧数
+     * 有界)。未 tick 过/单帧纹理 = 帧 0,与旧行为一致。
      *
      * @param sprite  物品贴图(atlas 精灵)
      * @param color   ARGB 描边色
@@ -1481,9 +1512,10 @@ public final class OutlineRenderer {
             // → 8 方向平移画出整块矩形。本体直接渲染贴图(不依赖 originalImage)所以正常。
             return WHITE_TEXTURE;
         }
+        int frame = this.spriteFrameTracker.getOrDefault(sprite.contents(), 0);
         return shapeTexture(sprite.contents().name(),
-                cropToFrame0(src, sprite.contents().width(), sprite.contents().height()),
-                color, reduce, mix);
+                cropToFrame(src, sprite.contents().width(), sprite.contents().height(), frame),
+                color, reduce, mix, frame);
     }
 
     /**
@@ -1641,6 +1673,13 @@ public final class OutlineRenderer {
         }
         ResourceLocation cached = this.animFrameTextures.get(texture);
         if (cached != null) {
+            // R2 修复(2026-10-25):缓存的"首帧烘焙"死注册,若注册纹理后来被升级为
+            // AnimatableTexture(如模组管线 heal 注册链),改回绑原 location(实时帧,
+            // 描边与本体动画同步)。getTexture 为 map 查询,零开销。
+            if (cached != texture && isAnimatableTexture(texture)) {
+                this.animFrameTextures.remove(texture);
+                return texture;
+            }
             return cached;
         }
         try {
@@ -1686,24 +1725,51 @@ public final class OutlineRenderer {
     }
 
     /**
-     * 把序列图 NativeImage 裁成左上角 (fw×fh) 首帧(atlas 精灵版,BUG1 同源修复):
-     * 动画精灵的 contents 宽高 = 帧尺寸,originalImage = 整张 sheet。
+     * 注册纹理是否为 GeckoLib/AzureLib AnimatableTexture(活动画判定,R2 修复用)。
+     * <p>
+     * 类名后缀判断与既有 {@code animatedSampleTexture} 主路径同款;getTexture 为
+     * map 查询(缺失时触发懒注册,AzureLib/GeckoLib mixin 顺带建立动画纹理,即
+     * "治愈注册链"),异常一律返回 false(按死注册处理,调用方走烘焙路径)。
+     *
+     * @param texture 纹理 location
+     * @return true = 注册纹理为 AnimatableTexture(活动画)
+     */
+    private static boolean isAnimatableTexture(ResourceLocation texture) {
+        try {
+            var registered = Minecraft.getInstance().getTextureManager().getTexture(texture);
+            return registered != null
+                    && registered.getClass().getName().endsWith("AnimatableTexture");
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    /**
+     * 把序列图 NativeImage 裁成指定帧格(atlas 精灵版,BUG1 同源修复 + 帧感知 2026-10-25):
+     * 动画精灵的 contents 宽高 = 帧尺寸,originalImage = 整张 sheet,帧格按
+     * 纵向单列排布(y 偏移 = 帧格索引 × 帧高,与 {@link #cropAnimationFrame0} 同一假设)。
+     * 帧格越界回退首行(防御,与 cropAnimationFrame0 一致)。
      * 尺寸吻合(非动画)原样返回同一实例(调用方据此跳过 close)。
      *
-     * @param src 原始图像(可能是整张 sheet)
-     * @param fw  帧宽(精灵 contents 宽)
-     * @param fh  帧高(精灵 contents 高)
-     * @return 首帧图像;非动画返回原实例
+     * @param src        原始图像(可能是整张 sheet)
+     * @param fw         帧宽(精灵 contents 宽)
+     * @param fh         帧高(精灵 contents 高)
+     * @param frameIndex 帧格索引(tracker miss/非动画传 0 = 首帧,与旧行为一致)
+     * @return 指定帧图像;非动画返回原实例
      */
-    private static NativeImage cropToFrame0(NativeImage src, int fw, int fh) {
+    private static NativeImage cropToFrame(NativeImage src, int fw, int fh, int frameIndex) {
         int w = src.getWidth(), h = src.getHeight();
         if (fw <= 0 || fh <= 0 || fw > w || fh > h || (w == fw && h == fh)) {
             return src;
         }
+        int y0 = frameIndex * fh;
+        if (y0 < 0 || y0 + fh > h) {
+            y0 = 0; // 帧格越界回退首行(防御)
+        }
         NativeImage frame = new NativeImage(fw, fh, false);
         for (int y = 0; y < fh; y++) {
             for (int x = 0; x < fw; x++) {
-                frame.setPixelRGBA(x, y, src.getPixelRGBA(x, y));
+                frame.setPixelRGBA(x, y, src.getPixelRGBA(x, y + y0));
             }
         }
         return frame;
@@ -1732,7 +1798,7 @@ public final class OutlineRenderer {
     private ResourceLocation shapeTextureForLocation(ResourceLocation texture, int color) {
         int rgb = color & 0xFFFFFF;
         boolean reduce = Config.OUTLINE_EXPOSURE_REDUCE.get();
-        ShapeKey key = new ShapeKey(texture, rgb, reduce, false);
+        ShapeKey key = new ShapeKey(texture, rgb, reduce, false, 0);
         ResourceLocation cached = this.shapeTextures.get(key);
         if (cached != null) {
             return cached; // 已生成过:直接复用,不再读 PNG
@@ -1763,7 +1829,7 @@ public final class OutlineRenderer {
                         src.setPixelRGBA(x, y, (a << 24) | (b << 16) | (g << 8) | r);
                     }
                 }
-                ResourceLocation loc = shapeTexture(texture, src, color, reduce, false);
+                ResourceLocation loc = shapeTexture(texture, src, color, reduce, false, 0);
                 src.close();
                 return loc;
             }

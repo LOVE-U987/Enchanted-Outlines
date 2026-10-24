@@ -183,6 +183,23 @@ public final class Config {
             .define("enableTaczCompat", true);
 
     /**
+     * Sodium 动画纹理兼容(2026-10-25,动态物品附魔后动画冻结修复)。
+     * <p>
+     * Sodium 0.8 的"仅动画可见纹理"优化对附魔物品渲染路径的可见性标记失效,
+     * atlas 序列精灵被误判不可见而停止 tick → 附魔物品动画冻结。开启后本模组在
+     * 物品渲染入口对附魔物品的模型精灵调用 Sodium 公开 API
+     * ({@code SpriteUtil.markSpriteActive}) 标记活跃,保留优化、豁免附魔物品。
+     * 独立于描边总开关;未安装 Sodium 时无效果。
+     */
+    public static final ModConfigSpec.BooleanValue SODIUM_TEXTURE_COMPAT = BUILDER
+            .comment("Mark enchanted item sprites active for Sodium's animate-only-visible-textures optimization (default true).",
+                    "Sodium 动画纹理兼容(默认开启):",
+                    "Sodium 的\"仅动画可见纹理\"优化会冻结附魔物品的动态纹理动画(其可见性跟踪不含附魔渲染路径);",
+                    "true = 本模组在物品渲染入口对附魔物品精灵调用 Sodium 公开 API 标记活跃,保留该优化并豁免附魔物品(默认);",
+                    "false = 不做标记(若冻结复现,需手动关闭 Sodium 的\"仅动画可见纹理\")。未装 Sodium 时本项无效果。")
+            .define("sodiumAnimatedTextureCompat", true);
+
+    /**
      * TACZ 第一人称描边厚度倍率(默认 2.0)。
      * <p>
      * 实机反馈第一人称环宽偏细(2026-10-18):第一人称下枪械描边环宽 = 基础厚度 ×

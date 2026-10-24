@@ -3,6 +3,7 @@ package com.enchantedoutlines.mod.mixin;
 import com.enchantedoutlines.mod.config.Config;
 import com.enchantedoutlines.mod.outline.ColorResolver;
 import com.enchantedoutlines.mod.outline.OutlineRenderer;
+import com.enchantedoutlines.mod.outline.SodiumCompat;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.ItemInHandRenderer;
@@ -75,6 +76,11 @@ public abstract class ItemInHandRendererMixin {
                                                      ItemDisplayContext context, boolean leftHand,
                                                      PoseStack pose, MultiBufferSource buffers,
                                                      int light, CallbackInfo ci) {
+        // Sodium 动画纹理兼容(2026-10-25):附魔物品精灵标记 active,防"仅动画可见纹理"
+        // 优化冻结附魔物品动画。独立于描边总开关,内部自行做门禁;seed 与本体
+        // renderItem -> renderStatic 一致(entity.getId() + context.ordinal())。
+        SodiumCompat.markStackSprites(stack, entity,
+                entity != null ? entity.getId() + context.ordinal() : 0);
         // 标记当前处于 ItemInHandRenderer 上下文,让 ItemRendererMixin 跳过重复描边
         OutlineRenderer.markItemInHandRender(true);
         // 逐物品覆盖标记:深层混色决策(mix/blend/纯白判定)经此查询 solidColorItems

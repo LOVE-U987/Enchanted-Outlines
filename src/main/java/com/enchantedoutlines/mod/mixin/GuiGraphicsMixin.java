@@ -3,6 +3,7 @@ package com.enchantedoutlines.mod.mixin;
 import com.enchantedoutlines.mod.config.Config;
 import com.enchantedoutlines.mod.outline.ColorResolver;
 import com.enchantedoutlines.mod.outline.OutlineRenderer;
+import com.enchantedoutlines.mod.outline.SodiumCompat;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -46,6 +47,9 @@ public abstract class GuiGraphicsMixin {
             at = @At("HEAD"))
     private void enchantedoutlines$renderOutline(LivingEntity entity, Level level, ItemStack stack,
                                                  int x, int y, int seed, int quadSize, CallbackInfo ci) {
+        // Sodium 动画纹理兼容(2026-10-25):附魔物品精灵标记 active,防"仅动画可见纹理"
+        // 优化冻结附魔物品动画。独立于描边总开关(冻结与描边无关),内部自行做门禁。
+        SodiumCompat.markStackSprites(stack, level, entity, seed);
         // ⚠️ GUI 屏幕空间渲染标记(HEAD 设 true / RETURN 恢复 false):背包/容器/快捷栏等
         // 物品图标是 2D 屏幕绘制,不经 Iris 光影 —— 期间 needVanillaShaderFallback() 必须
         // 恒 false(自定义 shader),否则开光影时扁平/Geo/BEWLR 物品轮廓会错误 fallback 到

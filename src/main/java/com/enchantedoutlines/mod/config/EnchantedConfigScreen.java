@@ -109,6 +109,7 @@ public class EnchantedConfigScreen extends Screen {
             y = addBooleanRow(y, "armorPixelColorGlint", Config.ARMOR_PIXEL_COLOR_GLINT, widgetX);
             y = addBooleanRow(y, "armorUniformExpand", Config.ARMOR_UNIFORM_EXPAND, widgetX);
             y = addBooleanRow(y, "outlineExposureReduce", Config.OUTLINE_EXPOSURE_REDUCE, widgetX);
+            y = addBooleanRow(y, "sodiumAnimatedTextureCompat", Config.SODIUM_TEXTURE_COMPAT, widgetX);
         } else if (selectedCategory == 1) { // colors
             y = addColorRow(y, "defaultColor", Config.DEFAULT_COLOR, widgetX);
             y = addLongTextRow(y, "enchantColors", Config.ENCHANT_COLORS, widgetX);

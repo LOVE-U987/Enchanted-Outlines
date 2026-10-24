@@ -19,6 +19,8 @@
   "enchanted_outlines.config.armorPixelColorGlint.tooltip": "仅光影兼容模式下生效（不开光影时描边恒为纯色）：开启时盔甲/鞘翅/投掷物描边采样原纹理 alpha 遮罩（贴合单层纹理轮廓，颜色与纹理混合）；关闭时描边为纯色（形状由模型几何决定）。",
   "enchanted_outlines.config.outlineExposureReduce": "纯色描边按物体颜色降曝光",
   "enchanted_outlines.config.outlineExposureReduce.tooltip": "仅当关闭“附魔光效混合物品颜色”时生效：纯色描边按物品贴图的平均亮度压暗（暗色物品的描边显著变暗、亮色物品基本不变），模拟“混合算法根据物体颜色降低曝光”的效果，色相不变。关闭则纯色描边保持原始亮度。",
+  "enchanted_outlines.config.sodiumAnimatedTextureCompat": "Sodium 动画纹理兼容",
+  "enchanted_outlines.config.sodiumAnimatedTextureCompat.tooltip": "Sodium 的“仅动画可见纹理”优化会冻结附魔物品的动态纹理动画（其可见性跟踪不含附魔渲染路径）。开启后本模组在物品渲染入口对附魔物品精灵调用 Sodium 公开 API 标记活跃，保留该优化并豁免附魔物品（默认）。关闭则不做标记（若冻结复现，需手动关闭 Sodium 的“仅动画可见纹理”）。未装 Sodium 时本项无效果。",
   "enchanted_outlines.config.bewlr3dScale": "BEWLR 3D 描边放大系数",
   "enchanted_outlines.config.bewlr3dScale.tooltip": "模组自定义实体模型武器(BEWLR,如月弧长枪/灾变武器)3D 描边的放大系数。3D 描边外扩量 = 系数×厚度×点到中心距离(整体壳)或固定位移(逐 cube 外扩);细长武器需要更大的基础系数才明显。",
   "enchanted_outlines.config.bewlr3dPerCube": "灾变武器逐 cube 顶点法线外扩",

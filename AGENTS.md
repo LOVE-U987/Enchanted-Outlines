@@ -31,9 +31,19 @@
     触发 AzureLib mixin 建立动画纹理,治愈本体注册链);普通 SimpleTexture(整张
     sheet、无 mixin 推帧)→ 绑首帧烘焙动态纹理(缓存登记 invalidateCaches);
     非序列图零开销;
-  - atlas 精灵版(`shapeTextureFor`)对动画精灵裁 `contents` 尺寸首帧(同源加固);
-  - 首帧烘焙是静态近似:仅用于"无 mixin 推帧"的死注册;活动画路径描边实时同步。
-    混色关的 CPU 烘焙形状路径(readTextureFrame)恒为帧 0 静态(不随帧动画),接受。
+  - atlas 精灵版(`shapeTextureFor`)**帧感知(2026-10-25)**:`SpriteContentsTickerMixin`
+    在原版 `Ticker.tickAndUpload` 的帧上传点记录当前帧格(spriteFrameTracker),
+    形状缓存键含帧号、帧切换重烘 → 描边随本体序列纹理动画;miss = 帧 0(未
+    tick 过/单帧纹理,与旧行为一致);
+  - 首帧烘焙是静态近似:仅用于"无 mixin 推帧"的死注册;活动画路径描边实时同步
+    (且 `animatedSampleTexture` 的死注册缓存带重校验:注册纹理升级为
+    AnimatableTexture 后自动改绑原 location);
+    独立纹理路径(readTextureFrame,盔甲/鞘翅/投掷物)恒为帧 0 静态,接受;
+  - **Sodium 动画纹理兼容(2026-10-25)**:Sodium 0.8 `animate_only_visible_textures`
+    对附魔物品渲染路径的可见性标记失效 → atlas 精灵动画冻结(根因实测确认,
+    知识库 2026-10-25 条目)。`SodiumCompat` 在三个物品渲染 mixin HEAD 对附魔
+    物品精灵调用 Sodium 公开 API `SpriteUtil.markSpriteActive`(反射,无硬依赖),
+    配置 `sodiumAnimatedTextureCompat`(默认 true),**独立于描边总开关**。
 
 ### 2. 亮度计算必须归一化到 0..1
 - **事故(同上)**:`averageLuma` 的 Rec.601 加权平均后忘了 `÷255`,`exposureScale` 算出

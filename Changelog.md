@@ -84,3 +84,26 @@
   (语言键一致性检查 23→24 行全绿)。顺带把 `enableTaczCompat` 的配置注释与
   双语 tooltip 从过时的"捕获"语义更新为走查 mixin 语义。
 - **验证**:`gradlew compileJava` 通过;`verify.bat` 全绿(12 项);实机确认待用户进行。
+
+### 修复:动态物品附魔后动画冻结(Sodium 兼容)+ 描边随序列纹理动画(2026-10-25)
+
+- **根因(用户实测确认)**:Sodium 0.8 `animate_only_visible_textures`(仅动画可见纹理)
+  对附魔物品渲染路径的可见性标记失效 → atlas 序列精灵被误判不可见而停止 tick,
+  附魔物品动画冻结;同款无附魔物品渲染会重新标记精灵,冻结随之解除。关闭描边
+  模组仍复现(描边无罪);完整根因链见知识库「项目经验」2026-10-25 条目。
+- **SodiumCompat(新增)**:反射调用 Sodium 公开 API `SpriteUtil.markSpriteActive`,
+  在三个物品渲染入口(GuiGraphicsMixin/ItemRendererMixin/ItemInHandRendererMixin)
+  HEAD 对附魔物品模型引用的精灵逐帧标记活跃 —— 保留 Sodium 优化,仅豁免附魔
+  物品。无 Sodium 硬依赖(未装零开销);配置 `sodiumAnimatedTextureCompat`
+  (默认 true),独立于描边总开关。精灵列表按 BakedModel 弱引用缓存。
+- **帧感知描边形状**:`SpriteContentsTickerMixin` 在原版 `SpriteContents$Ticker`
+  帧上传点捕获当前帧格索引(注入 INVOKE 参数捕获,记录到
+  `OutlineRenderer.spriteFrameTracker`),`shapeTextureFor` 形状缓存键加入帧号、
+  `cropToFrame0` 扩展为 `cropToFrame`(帧格裁剪)→ 扁平物品描边随序列纹理动画
+  (星尘/突变心脏类),不再恒为帧 0。
+- **R2 隐患顺手修复**:`animatedSampleTexture` 的"死注册 → 首帧烘焙"判定不再
+  永久缓存 —— 缓存命中时重校验注册纹理活性,升级为 AnimatableTexture 后自动
+  改绑原 location(实时帧)。
+- **文档**:AGENTS.md 铁律 1.5 更新为帧感知语义 + 新增 Sodium 兼容注记。
+- **验证**:`verify.bat` 结果见提交说明;实机验收清单(动画恢复/描边随帧/开关
+  回归/无 Sodium 环境)待用户进行。
