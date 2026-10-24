@@ -216,21 +216,53 @@
   `Config.ARMOR_PIXEL_COLOR_GLINT` 设 blend(<b>2026-10-02 语义修正,用户决策:
   不开光影时代码级强制纯色(blend 恒 0、扁平 mix 恒 false,无视混色开关),混色仅在
   光影兼容模式依据配置(默认 true 不变)</b>)。uniform 全局、每批 flush 前设置。
-- **TACZ 专项(v2.1 定稿,`Config.ENABLE_TACZ_COMPAT` 默认 true)**:TACZ 枪械是自绘
-  Bedrock BEWLR(`GunItemRendererWrapper`),几何不在 BakedModel,且其
-  `BedrockModel.render` <b>绕过传入的 MultiBufferSource 直接写全局共享
-  bufferSource</b> —— 逐层复刻路径(四层前置变换)经实测仍错位,已删除;全局缓冲替换
-  已统一并入捕获(2026-10-02,`BewlrCapture.capturePlain`:捕获窗口内恒替换
-  RenderBuffers.bufferSource,直写全局的渲染链被整体捕获,TACZ 由 v2 直接捕获
-  且不再泄漏/重复渲染,完整渲染链从构造上与本体一致);GUI 本体
-  是 2D slot 贴图平面,走 v2.1 平坦几何<b>贴图形状描边</b>(捕获 UV+纹理,枪形轮廓);
-  第一人称渲染器读相机,派发层直接跳过。Hazen 用 `Config.ENABLE_HAZEN_COMPAT`。
-  姿态错位可关对应开关回"无描边"。
-捕获顶点被抬到相机空间 → 绕 AABB 放大会画成"天上巨大枪模、本体无描边";所以
-  TACZ 第一人称明确不走捕获(return false),GUI/FIXED/GROUND 仍捕获贴合。所有捕获
-  统一有 `CAPTURE_MAX_SPAN`(64 模型单位)尺寸守卫 + 手持 context 中心距离守卫
-  (`CAPTURE_MAX_CENTER_DIST`=16,见铁律 6.8),捕获到异常包围盒一律跳过并走
-  `logCaptureReject` 节流日志留痕(宁可无描边,不画错位巨壳)。姿态错位可经对应
+- **TACZ 专项(2026-10-18 推倒重做:TaCZ 内部注入走查,`Config.ENABLE_TACZ_COMPAT`
+  默认 true)**:TACZ 枪械是自绘 Bedrock BEWLR(`GunItemRendererWrapper`,
+  jar-in-jar simplebedrockmodel)。旧"通用捕获"对 TaCZ 无用的两大根因(反编译
+  实证,2026-10-18):
+  <ol>
+    <li><b>第一人称被旁路</b>:simplebedrockmodel IFP 系统在
+        `FirstPersonRenderHandler.onRenderHand` 直接取消原版 `RenderHandEvent`
+        后自调 `renderFirstPerson` —— 原版 `ItemInHandRenderer.renderItem`
+        (旧注入点)在第一人称<b>根本不执行</b>;且 TaCZ 以 GameRenderer mixin 改
+        bob/FOV(手持 FOV 与世界 FOV 分离),渲染 pass 外猜 pose 必错位。</li>
+    <li><b>第三人称几何被代码级修改</b>:LOD 按距离换模 / 附件动态挂载 / 改枪
+        (Refit)实时变换 —— 资源与实际渲染不同步;v2 identity pose 调
+        `renderByItem` → LOD 距离判定失真 → 捕获模型与本体不一致。</li>
+  </ol>
+  <b>新算法</b>:<b>注入 TaCZ 内部</b>,`TaczGunModelMixin`(新配置
+  `enchanted_outlines.tacz.mixins.json` + `TaczMixinPlugin` 条件应用,TACZ 缺席
+  时不应用任何 mixin)打在 `BedrockGunModel.render` <b>六参重载 HEAD</b> ——
+  第一人称(`renderFirstPersonInner`)与第三人称/GROUND/FIXED(`renderByItem`)
+  两条渲染链的唯一汇聚点,此刻 PoseStack 即本体最终变换(视角摆动/开镜/后座/
+  动画/LOD 选模全部就位;方法体内挂载块 push/pop 平衡)。⚠️ <b>必须 HEAD 不得
+  TAIL(实机反馈修复,2026-10-18)</b>:描边统一绘制顺序 = <b>描边先画(壳不写
+  深度)→ 本体后画盖住壳中心 → 只露外扩环</b>;TAIL 注入顺序倒置 → 无光影描边
+  糊在枪身上、光影下与本体深度竞争(z-fight 闪烁/穿出)。
+  `TaczGunOutline` 在该 pose 下遍历
+  `getShouldRender()`:逐部件<b>直调公开方法</b> `translateAndRotateAndScale`
+  (零复刻误差),逐 cube 绕包围盒中心放大壳后调公开方法 `cube.compile` 让
+  TaCZ 顶点代码向描边 buffer 发射(顶点写法与本体 100% 同源);RenderType 走
+  `armorOutlineRenderType`(贴图 alpha 形状,铁律 3.6)。对 Accelerated
+  Rendering 加速渲染环境天然兼容(只读模型数据)。<b>功能件节点必须跳过(实机
+  反馈修复,2026-10-18)</b>:手臂(lefthand_pos/righthand_pos)/枪口火焰/护木
+  变体是模型树内的 `FunctionalBedrockPart` 功能渲染器节点 —— 本体<b>从不</b>
+  编译其 cubes/children(只渲染功能件输出),走查必须镜像该语义跳过这些节点,
+  否则描边本体不可见的隐藏几何(枪模包预置的手臂方块曾被描出)。
+  <b>派发分工(2026-10-18)</b>:世界 context(第一/第三人称/GROUND/FIXED)由走查
+  mixin 全权接管,`renderBewlrEntityOutline` 对 TaCZ 非 GUI context 返回 false
+  (避免双描边);<b>GUI 仍走 v2.1 平坦捕获</b>(SlotModel 单面 quad 本就正常,
+  用户决策保留)。已知限制:附件(瞄具/弹匣)与功能件输出(原版手臂等)第一版
+  无描边(二期);LOD 远距描边贴图取高模(形状遮罩近似);光影包 GPU 侧手部
+  动画(如 EuphoriaPatches breathing hand)只作用于本体着色程序时,描边可能存在
+  与待机浮动同幅度的小偏移(本体盖中心语义下不产生 z-fight)。
+  <b>编译期依赖</b>:TaCZ 发行
+  jar 放 `compat-libs/`(compileOnly,不入库不分发,见 compat-libs/README.md),
+  缺 jar 时 TaCZ 专项源码无法编译属预期。Hazen 用 `Config.ENABLE_HAZEN_COMPAT`。
+  捕获路径仍统一有 `CAPTURE_MAX_SPAN`(64 模型单位)尺寸守卫 + 手持 context
+  中心距离守卫(`CAPTURE_MAX_CENTER_DIST`=16,见铁律 6.8),捕获到异常包围盒
+  一律跳过并走 `logCaptureReject` 节流日志留痕(宁可无描边,不画错位巨壳);
+  走查路径读模型树结构,无"垃圾几何"来源,不适用捕获守卫。姿态错位可经对应
   开关关闭回到"无描边"。
 - 捕获描边本身已在 `renderBewlrCapturedOutline` 用<b>顶点法线平均外扩</b>(与
   `prepareExpand/renderVertexNormalExpand` 同构):共享顶点沿相邻面法线均匀外扩、
@@ -350,10 +382,12 @@
   <b>全局缓冲防护已统一并入 capturePlain</b>(2026-10-02:所有捕获窗口内恒替换
   RenderBuffers.bufferSource,直写全局渲染器的顶点泄漏/重复渲染根治,见铁律 6.9);
 - `LionfishOutline` —— 灾变(LionfishAPI)逐 cube 顶点法线外扩 / 整体壳回退;
-- `TaczOutline` —— TACZ/Hazen 命名空间判定(纯静态)。TACZ 走捕获(2026-10-02 起
-  v2 直接捕获:全局缓冲防护统一并入 capturePlain;旧 v2.1 identity+重放与复刻路径
-  均因实测错位删除);第一人称仍跳过;
-  受 ENABLE_TACZ_COMPAT / BEWLR_GLOBAL_BUFFER_SWAP 双门禁。namespace 注册表
+- `TaczOutline` —— TACZ/Hazen 命名空间判定(纯静态)。TACZ 世界 context(第一/
+  第三人称/GROUND/FIXED)描边由 **TaCZ 内部注入走查**接管(2026-10-18 重做:
+  `mixin/tacz/TaczGunModelMixin` 打 `BedrockGunModel.render` TAIL +
+  `outline/TaczGunOutline` 模型树走查,mixin 经 `TaczMixinPlugin` 条件应用);
+  GUI 仍走捕获(v2.1 平坦);旧"第一人称跳过"已删除;
+  受 ENABLE_TACZ_COMPAT 总开关门禁。namespace 注册表
 	  (Config.bewlrNamespaceAdapters,详见②)可作为该命名空间下任一命名的细粒度
 	  适配控制,在 enableTaczCompat/hazenCompat 总开关之上进一步限制/重排适配路径;
 - `GeoOutline` —— GeckoLib/AzureLib 物品+盔甲(OutlineRenderer 保留 mixin 所需
@@ -365,7 +399,9 @@
   纯静态)。
 
 **新模组 BEWLR 适配改哪里**:静态字段模型 → `BewlrModelResolver`;GeckoLib/AzureLib
-骨骼 → `GeoOutline` 自动覆盖不用改;自绘模型(TACZ 型)→ `BewlrCapture` 零适配。
+骨骼 → `GeoOutline` 自动覆盖不用改;自绘模型(通用)→ `BewlrCapture` 零适配;
+TaCZ 型(自绘 + IFP 第一人称旁路 + LOD/附件代码级换模)→ `TaczGunOutline` 专项
+走查(mixin/tacz/ 注入,TACZ 缺席时不应用)。
 拆分是<b>行为保持</b>的:渲染语义/批次闭合/缓存清理纪律逐条对照铁律自查;
 mixin 文件与 OutlineRenderer 公有门面签名不得动(mixin 零改动约定)。
 

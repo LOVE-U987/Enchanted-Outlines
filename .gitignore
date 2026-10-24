@@ -39,6 +39,10 @@ run/
 repo/
 !**/src/**/repo/
 
+# 第三方模组编译依赖(运行时由玩家环境提供,不入库;详见 compat-libs/README.md)
+compat-libs/
+!compat-libs/README.md
+
 # VERIFY 验证工具 (tools/)
 __pycache__/
 *.pyc

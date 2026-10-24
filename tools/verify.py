@@ -226,10 +226,15 @@ def check_mixin_batch_closure(reporter: vc.Reporter) -> None:
     if not os.path.isdir(vc.MIXIN_DIR):
         reporter.warn("铁律 6.7", f"mixin 目录不存在: {vc.MIXIN_DIR}")
         return
-    for name in sorted(os.listdir(vc.MIXIN_DIR)):
-        if not name.endswith(".java"):
-            continue
-        path = os.path.join(vc.MIXIN_DIR, name)
+    # 递归收集 mixin 目录(含子包,如 tacz/ 条件配置的 mixin)的全部 .java
+    java_files: list[str] = []
+    for dirpath, _dirnames, filenames in os.walk(vc.MIXIN_DIR):
+        for n in filenames:
+            if n.endswith(".java"):
+                java_files.append(os.path.join(dirpath, n))
+    java_files.sort()
+    for path in java_files:
+        name = os.path.basename(path)
         skel = vc.strip_java(vc.read_text(path))
         renderers = vc.outline_methods_in_file(skel)
         if not renderers:
@@ -421,6 +426,7 @@ def check_mixins_registration(reporter: vc.Reporter) -> None:
         return
 
     declared: set[str] = set()
+    plugins: set[str] = set()
     for cfg_name in configs:
         cfg_path = os.path.join(vc.RESOURCES_DIR, cfg_name)
         try:
@@ -428,18 +434,28 @@ def check_mixins_registration(reporter: vc.Reporter) -> None:
         except ValueError as exc:
             reporter.error("mixin 注册", f"{cfg_name} 不是合法 JSON: {exc}", cfg_path)
             continue
+        # 各配置可声明 IMixinConfigPlugin 插件类(条件应用) —— 插件不是 mixin,
+        # 豁免"未注册"误报(如 enchanted_outlines.tacz.mixins.json 的 TaczMixinPlugin)
+        plugin = cfg.get("plugin")
+        if plugin:
+            plugins.add(plugin.split(".")[-1])
         for key in ("client", "server", "mixins"):
             for entry in cfg.get(key) or []:
                 # 允许 "com.foo.Bar" 形式，取末段类名
                 declared.add(entry.split(".")[-1])
 
-    actual = {n[:-5] for n in os.listdir(vc.MIXIN_DIR) if n.endswith(".java")} \
-        if os.path.isdir(vc.MIXIN_DIR) else set()
+    # 递归收集 mixin 目录(含子包,如 tacz/ 条件配置的 mixin),按类名(文件名去 .java)对齐
+    actual: set[str] = set()
+    if os.path.isdir(vc.MIXIN_DIR):
+        for dirpath, _dirnames, filenames in os.walk(vc.MIXIN_DIR):
+            for n in filenames:
+                if n.endswith(".java"):
+                    actual.add(n[:-5])
 
     missing = sorted(declared - actual)
     for name in missing:
         reporter.error("mixin 注册", f"mixins.json 声明了 {name} 但 mixin 包内无此类 → 启动崩溃")
-    unlisted = sorted(actual - declared)
+    unlisted = sorted(actual - declared - plugins)
     for name in unlisted:
         reporter.warn(
             "mixin 注册", f"mixin 包内的 {name} 未注册到 mixins.json → 注入静默失效",

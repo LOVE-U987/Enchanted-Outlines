@@ -37,6 +37,10 @@ A client-side mod that renders colored outlines around enchanted items in invent
 [[mixins]]
 config="${mod_id}.mixins.json"
 
+# TACZ 专项兼容 mixin(经 TaczMixinPlugin 条件应用:TACZ 不存在时不注册任何 mixin)
+[[mixins]]
+config="${mod_id}.tacz.mixins.json"
+
 # A dependency - use the . to indicate dependency for a specific modid. Dependencies are optional.
 [[dependencies.${mod_id}]] #optional
     # the modid of the dependency

@@ -175,11 +175,25 @@ public final class Config {
     public static final ModConfigSpec.BooleanValue ENABLE_TACZ_COMPAT = BUILDER
             .comment("Enable TACZ gun outline compatibility (default true).",
                     "TACZ 枪械描边兼容模式:",
-                    "true = 对 TACZ 武器启用描边 —— GUI/背包/手持/掉落物等上下文走 BEWLR 渲染捕获兜底,",
-                    "绕捕获到的几何外扩一圈壳; 若某姿态下捕获出现错位可临时关闭此项。",
+                    "true = 对 TACZ 武器启用描边 —— 世界场景(第一/第三人称/掉落物/展示框)由注入 TaCZ 内部的",
+                    "走查 mixin(BedrockGunModel.render HEAD)绘制外扩壳,随动画/开镜/LOD 同步;",
+                    "GUI(背包 slot 平面)走平坦捕获。若某姿态仍异常可临时关闭此项回\"无描边\"。",
                     "false = 保持旧行为, TACZ 物品一律不描边 (宁可无描边, 不渲染错位轮廓).",
                     "普通扁平物品与 AzureLib 盔甲不受本开关影响。")
             .define("enableTaczCompat", true);
+
+    /**
+     * TACZ 第一人称描边厚度倍率(默认 2.0)。
+     * <p>
+     * 实机反馈第一人称环宽偏细(2026-10-18):第一人称下枪械描边环宽 = 基础厚度 ×
+     * 本倍率,仅作用于 FIRST_PERSON_* 上下文;第三人称/掉落物/展示框不受影响。
+     */
+    public static final ModConfigSpec.DoubleValue TACZ_FIRST_PERSON_THICKNESS_SCALE = BUILDER
+            .comment("First-person outline thickness multiplier for TACZ guns (default 2.0).",
+                    "TACZ 第一人称描边厚度倍率:",
+                    "第一人称下枪械描边环宽 = 基础厚度 × 本倍率;默认 2.0(实机反馈第一人称环宽偏细)。",
+                    "0.5-4.0 之间调节,1.0 = 与第三人称/掉落物同宽。")
+            .defineInRange("taczFirstPersonThicknessScale", 2.0, 0.5, 4.0);
 
     /**
      * 命名空间 → BEWLR 适配器注册表(namespace=kind,2026-10-02 通用化收官)。

@@ -123,6 +123,7 @@ public class EnchantedConfigScreen extends Screen {
             y = addBooleanRow(y, "bewlrCaptureV2", Config.BEWLR_CAPTURE_V2, widgetX);
             y = addBooleanRow(y, "bewlrGlobalBufferSwap", Config.BEWLR_GLOBAL_BUFFER_SWAP, widgetX);
             y = addBooleanRow(y, "taczCompat", Config.ENABLE_TACZ_COMPAT, widgetX);
+            y = addDoubleRow(y, "taczFirstPersonThicknessScale", Config.TACZ_FIRST_PERSON_THICKNESS_SCALE, 0.5, 4.0, widgetX);
             y = addBooleanRow(y, "hazenCompat", Config.ENABLE_HAZEN_COMPAT, widgetX);
             y = addLongTextRow(y, "bewlrNamespaceAdapters", Config.BEWLR_NAMESPACE_ADAPTERS, widgetX);
             y = addMergeModeRow(y, widgetX);

@@ -136,6 +136,11 @@ dependencies {
     // For more info:
     // http://www.gradle.org/docs/current/userguide/artifact_dependencies_tutorial.html
     // http://www.gradle.org/docs/current/userguide/dependency_management.html
+
+    // TACZ 兼容(mixin 注入)的编译期依赖:从 compat-libs/ 读取 TACZ 发行 jar。
+    // 仅 compileOnly —— 运行时由玩家环境自带 TACZ,本模组不打包、不分发其 jar。
+    // 目录为空(未放置 jar)时跳过,此时 TaCZ 专项 mixin 相关源码无法编译(需先放置 jar)。
+    compileOnly fileTree(dir: 'compat-libs', include: ['tacz*.jar'])
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.

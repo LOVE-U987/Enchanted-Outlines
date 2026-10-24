@@ -89,8 +89,8 @@ import org.joml.Vector3f;
  *       "通用算法 v2"规范化捕获的落地战场);</li>
  *   <li>{@link LionfishOutline} —— LionfishAPI 骨骼(灾变)逐 cube 顶点法线外扩 / 整体壳
  *       回退描边;</li>
- *   <li>{@link TaczOutline} —— TACZ/Hazen 命名空间判定(TACZ 描边已统一走 v2 捕获,
- *       含全局缓冲旁路;专项复刻路径已于 v2.1 删除);</li>
+ *   <li>{@link TaczOutline} —— TACZ/Hazen 命名空间判定(2026-10-18 重做:TACZ 世界
+ *       context 描边由 TaczGunModelMixin + TaczGunOutline 走查接管,GUI 仍走捕获);</li>
  *   <li>{@link GeoOutline} —— GeckoLib/AzureLib Geo 物品与盔甲描边(含盔甲类型检测,
  *       本类保留 mixin 所需公有门面);</li>
  *   <li>{@link BewlrModelResolver} —— 静态字段模型解析(永恒星光/灾变精确映射表+预变换
@@ -2117,6 +2117,25 @@ public final class OutlineRenderer {
     private final LionfishOutline lionfishOutline = new LionfishOutline(this);
     private final BewlrCapture bewlrCapture = new BewlrCapture(this);
     private final GeoOutline geoOutline = new GeoOutline(this);
+    /**
+     * TaCZ 枪械走查描边子模块(2026-10-18 TaCZ 兼容重做)。
+     * <b>懒构造</b>:仅 {@code TaczGunModelMixin}(TaCZ 存在时才应用的 mixin)经
+     * {@link #taczOutline()} 首次触发加载 —— TaCZ 缺席时本类不加载,任何 TaCZ
+     * 类型引用都不会被解析(可选依赖安全模式)。
+     */
+    private TaczGunOutline taczGunOutline;
+
+    /**
+     * TaCZ 枪械走查描边子模块访问器(懒构造,见字段注释)。
+     *
+     * @return TaCZ 枪械走查子模块(单例内复用)
+     */
+    TaczGunOutline taczOutline() {
+        if (taczGunOutline == null) {
+            taczGunOutline = new TaczGunOutline(this);
+        }
+        return taczGunOutline;
+    }
 
     static float bewlrInflatePerThickness() {
         return Config.BEWLR_3D_SCALE.get().floatValue();
@@ -2174,8 +2193,15 @@ public final class OutlineRenderer {
                 || (hazen && !Config.ENABLE_HAZEN_COMPAT.get())) {
             return false;
         }
-        // ⚠️ TACZ 第一人称(2026-09-26):渲染器读相机/内部动画姿态,本注入点(HEAD)必错位
-        if (tacz && context.firstPerson()) {
+        // ⚠️ TACZ 兼容重做(2026-10-18):第一/第三人称/GROUND/FIXED 的 TaCZ 枪械描边由
+        // BedrockGunModel.render 六参重载 TAIL 的走查 mixin(TaczGunModelMixin +
+        // TaczGunOutline)全权接管 —— 该注入点在 TaCZ 渲染器内部,pose 天然对齐
+        // (simplebedrockmodel IFP 取消原版第一人称渲染 + LOD/附件/改枪变换全部由本体
+        // 自带)。旧"第一人称跳过"(渲染器读相机,HEAD 注入必错位)随之作废:重做后
+        // 第一人称已可描边。本派发链对这些 context 直接返回 false,避免与走查
+        // mixin 双描边;GUI(背包 slot 2D 平面)不经走查 mixin(本体走 SlotModel
+        // 独立路径),仍走下方 v2.1 平坦捕获(用户决策保留)。
+        if (tacz && context != ItemDisplayContext.GUI) {
             return false;
         }
 

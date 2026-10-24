@@ -7,16 +7,14 @@ import net.minecraft.world.item.ItemStack;
 /**
  * TACZ(The Arsenal Collection Z)与 Hazen'N Stuff 命名空间判定(纯静态工具类)。
  * <p>
- * <b>2026-10-02 全局缓冲防护统一</b>:TACZ 的专项模型复刻路径(renderBedrock)经实测
- * 仍错位(1.1.8 存在复刻之外的变换来源),已删除。全局缓冲替换已统一并入
- * BewlrCapture.capturePlain(捕获窗口内恒替换 RenderBuffers.bufferSource):TACZ
- * 直写全局的渲染链被整体写进捕获器 —— v2(identity)直接捕获成功(每帧 1 次渲染
- * 调用,描边随动画);v1(真实 pose)回退语义不变(捕获 = 最终绘制坐标,原样发射)。
- * 泄漏根治:未替换全局时直写全局渲染器会把 identity 顶点漏进真实渲染管线
- * (flush 时被解释为相机/GUI 空间 → 视野错位图形)。
- * <p>
- * 本类只保留命名空间判定(派发逻辑的开关门禁与 TACZ 第一人称跳过判断用),
- * 不再持有渲染器实例。
+ * <b>2026-10-18 TaCZ 兼容重做</b>:世界场景(第一/第三人称/GROUND/FIXED)的 TaCZ
+ * 枪械描边改由 <b>TaCZ 内部注入</b>走查 —— {@code TaczGunModelMixin}(TaCZ
+ * {@code BedrockGunModel.render} 六参重载 TAIL,经 {@code TaczMixinPlugin} 条件
+ * 应用)+ {@link TaczGunOutline}(模型树走查外扩壳)。旧路径为何作废(反编译
+ * 实证):simplebedrockmodel IFP 系统取消原版第一人称渲染 → 原版注入点不执行;
+ * LOD/附件/改枪的代码级模型修改 → 捕获派(调 renderByItem)拿到的几何与本体
+ * 不同步。GUI(背包 slot 2D 平面)不经新 mixin,仍走 v2.1 平坦捕获(用户决策
+ * 保留)。本类保持纯静态命名空间判定(派发链门禁用),不持有渲染器实例。
  */
 final class TaczOutline {
 
@@ -31,8 +29,8 @@ final class TaczOutline {
      * GunItemRendererWrapper extends AnimateGeoItemRenderer,simplebedrockmodel 的
      * Bedrock 骨骼):GUI 本体 = 2D slot 纹理平面,手持本体 = 3D Bedrock 模型,既无静态
      * 模型字段也不属于 GeckoLib/AzureLib/Lionfish 体系 → 由 BEWLR 派发逻辑按命名空间
-     * 特殊处理(第一人称跳过 / 其余 context 走捕获;全局缓冲防护已统一并入
-     * capturePlain,直写全局的渲染链被整体捕获)。
+     * 特殊处理(2026-10-18 重做:世界 context 由 TaczGunModelMixin 走查接管,GUI 走
+     * 平坦捕获,见类注释)。
      *
      * @param stack 物品
      * @return true = TACZ 物品
