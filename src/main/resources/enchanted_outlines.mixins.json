@@ -8,7 +8,7 @@
     "HumanoidArmorLayerMixin",
     "ItemInHandRendererMixin",
     "ItemRendererMixin",
-    "SpriteContentsTickerMixin",
+    "SpriteContentsAnimatedTextureMixin",
     "ThrownTridentRendererMixin",
     "ElytraModelAccessor",
     "ElytraLayerAccessor",

@@ -354,10 +354,10 @@ public final class OutlineRenderer {
 
     /**
      * 序列纹理当前帧号追踪(帧感知描边形状,2026-10-25):SpriteContents → 最近一次
-     * 帧切换的帧格索引。由 {@code SpriteContentsTickerMixin} 在原版
-     * {@code Ticker.tickAndUpload} 的帧上传点记录(帧切换才触发,帧格索引 = 正在
-     * 显示的帧);弱引用,精灵重载后自动回收。供 {@link #shapeTextureFor} 按当前
-     * 帧烘焙描边形状 → 描边随本体序列纹理动画。miss = 帧 0(未 tick 过/单帧纹理,
+     * 帧切换的帧格索引。由 {@code SpriteContentsAnimatedTextureMixin} 在原版
+     * {@code AnimatedTexture.uploadFrame} 的 HEAD 记录(帧切换才触发,帧格索引 =
+     * 正在显示的帧);弱引用,精灵重载后自动回收。供 {@link #shapeTextureFor} 按当前
+     * 帧烘焙描边形状 → 描边随本体序列纹理动画。miss = 帧 0(未切换过帧/单帧纹理,
      * 与旧行为一致)。登记于 {@link #invalidateCaches}(铁律 6)。
      */
     private final Map<SpriteContents, Integer> spriteFrameTracker = new WeakHashMap<>();
@@ -382,17 +382,63 @@ public final class OutlineRenderer {
     }
 
     /**
-     * 记录序列纹理当前显示的帧格索引({@code SpriteContentsTickerMixin} 回调)。
+     * 记录序列纹理当前显示的帧格索引({@code SpriteContentsAnimatedTextureMixin} 回调)。
      * <p>
-     * 由原版 {@code SpriteContents$Ticker.tickAndUpload} 的帧上传点调用,帧切换
-     * 才触发;记录值 = 正在显示的帧格。弱引用键,每 tick 每精灵一次,零分配热点。
+     * 由原版 {@code AnimatedTexture.uploadFrame} HEAD 调用,帧切换才触发;记录值 =
+     * 正在显示的帧格。所属 SpriteContents 经 {@link #animatedTextureOwnerField}
+     * 运行期按类型解析(合成外类字段,不依赖编译名);解析失败静默跳过
+     * (tracker 无记录 → 描边按帧 0,与旧行为一致)。
      *
-     * @param contents   精灵内容(键)
-     * @param frameIndex 当前显示的帧格索引
+     * @param animatedTexture mixin 实例(即 AnimatedTexture 对象)
+     * @param frameIndex      当前切换到的帧格索引
      */
-    public static void recordSpriteFrame(SpriteContents contents, int frameIndex) {
-        INSTANCE.spriteFrameTracker.put(contents, frameIndex);
+    public static void recordSpriteFrame(Object animatedTexture, int frameIndex) {
+        try {
+            if (animatedTexture == null) {
+                return;
+            }
+            Field ownerField = animatedTextureOwnerField(animatedTexture.getClass());
+            if (ownerField == null) {
+                return;
+            }
+            SpriteContents contents = (SpriteContents) ownerField.get(animatedTexture);
+            if (contents != null) {
+                INSTANCE.spriteFrameTracker.put(contents, frameIndex);
+            }
+        } catch (Throwable ignored) {
+            // 记录失败(反射受限等):描边回退帧 0,不影响本体渲染
+        }
     }
+
+    /**
+     * 定位 AnimatedTexture → 所属 SpriteContents 的合成外类字段(运行期按类型,
+     * 不依赖编译名"this$0"——2026-10-25 事故:remap/distclean 后合成字段名不可靠,
+     * @Shadow 按名匹配失败导致启动崩溃)。
+     * <p>
+     * AnimatedTexture 的声明字段中类型恰为 {@code SpriteContents} 的成员唯一
+     * (其余为 frames/interpolateFrames/interpolationData 等);解析一次后静态缓存。
+     *
+     * @param cls 运行期 AnimatedTexture 类(mixin 织入后含合成字段)
+     * @return 外类引用字段;未找到返回 null(记录路径静默降级)
+     */
+    private static Field animatedTextureOwnerField(Class<?> cls) {
+        if (animatedTextureOwnerField == null && !animatedTextureOwnerFieldResolved) {
+            animatedTextureOwnerFieldResolved = true;
+            for (Field f : cls.getDeclaredFields()) {
+                if (f.getType() == SpriteContents.class) {
+                    f.setAccessible(true);
+                    animatedTextureOwnerField = f;
+                    break;
+                }
+            }
+        }
+        return animatedTextureOwnerField;
+    }
+
+    /** AnimatedTexture → SpriteContents 的合成外类字段(按类型定位,一次缓存)。 */
+    private static volatile Field animatedTextureOwnerField;
+    /** 外类字段是否已解析(含"未找到"的负缓存,避免每帧重扫)。 */
+    private static boolean animatedTextureOwnerFieldResolved;
 
     /**
      * "纹理是否全透明"(无任何 alpha&gt;0 像素)检测缓存(按纹理 location)。

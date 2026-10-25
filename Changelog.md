@@ -96,8 +96,10 @@
   HEAD 对附魔物品模型引用的精灵逐帧标记活跃 —— 保留 Sodium 优化,仅豁免附魔
   物品。无 Sodium 硬依赖(未装零开销);配置 `sodiumAnimatedTextureCompat`
   (默认 true),独立于描边总开关。精灵列表按 BakedModel 弱引用缓存。
-- **帧感知描边形状**:`SpriteContentsTickerMixin` 在原版 `SpriteContents$Ticker`
-  帧上传点捕获当前帧格索引(注入 INVOKE 参数捕获,记录到
+- **帧感知描边形状**:`SpriteContentsAnimatedTextureMixin` 在原版
+  `AnimatedTexture.uploadFrame` HEAD 捕获当前帧格索引(标准 HEAD 参数捕获;
+  首版按 @Shadow 合成外类字段挂 Ticker,运行期 remap 后字段名失配导致启动崩溃,
+  已改为零 Shadow + 运行期按字段类型解析外类引用,记录到
   `OutlineRenderer.spriteFrameTracker`),`shapeTextureFor` 形状缓存键加入帧号、
   `cropToFrame0` 扩展为 `cropToFrame`(帧格裁剪)→ 扁平物品描边随序列纹理动画
   (星尘/突变心脏类),不再恒为帧 0。

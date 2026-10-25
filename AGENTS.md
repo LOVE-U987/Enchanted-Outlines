@@ -31,10 +31,12 @@
     触发 AzureLib mixin 建立动画纹理,治愈本体注册链);普通 SimpleTexture(整张
     sheet、无 mixin 推帧)→ 绑首帧烘焙动态纹理(缓存登记 invalidateCaches);
     非序列图零开销;
-  - atlas 精灵版(`shapeTextureFor`)**帧感知(2026-10-25)**:`SpriteContentsTickerMixin`
-    在原版 `Ticker.tickAndUpload` 的帧上传点记录当前帧格(spriteFrameTracker),
-    形状缓存键含帧号、帧切换重烘 → 描边随本体序列纹理动画;miss = 帧 0(未
-    tick 过/单帧纹理,与旧行为一致);
+  - atlas 精灵版(`shapeTextureFor`)**帧感知(2026-10-25)**:`SpriteContentsAnimatedTextureMixin`
+    在原版 `AnimatedTexture.uploadFrame` HEAD 捕获当前帧格(spriteFrameTracker;
+    ⚠️ 所属 SpriteContents 由 OutlineRenderer 运行期按字段类型解析 —— 合成外类
+    字段 this$0 经 remap/distclean 后名字不可靠,@Shadow 按名匹配会启动即崩,
+    禁止改回按名 Shadow),形状缓存键含帧号、帧切换重烘 → 描边随本体序列纹理
+    动画;miss = 帧 0(未切换过帧/单帧纹理,与旧行为一致);
   - 首帧烘焙是静态近似:仅用于"无 mixin 推帧"的死注册;活动画路径描边实时同步
     (且 `animatedSampleTexture` 的死注册缓存带重校验:注册纹理升级为
     AnimatableTexture 后自动改绑原 location);
