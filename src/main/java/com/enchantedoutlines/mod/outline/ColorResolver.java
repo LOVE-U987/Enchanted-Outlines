@@ -22,11 +22,14 @@ import net.minecraft.world.item.enchantment.ItemEnchantments;
  *   <li>RPG 虹灯 (配置 {@code ENABLE_RPG_RAINBOW})→ 动态彩虹色 (仅对附魔物品,
  *       优先级高于物品固定色/附魔色;白名单不限制彩虹)</li>
  *   <li>物品不在白名单 (配置 {@code enabledItems})→ 不描边 (-1)</li>
+ *   <li>资源包轮廓定义 ({@link OutlineResources};静态色或时间循环动画)→ 使用该色;
+ *       优先于程序化/配置固定色(资源包是玩家直接可见可控的载体)。
+ *       免附魔语义不变:定义只在物品已带附魔、未被禁用且在白名单时被查询到</li>
  *   <li>物品固定颜色 (程序化 &gt; 配置)→ 使用该色</li>
  *   <li>附魔取色 (程序化 &gt; 配置;mergeMode 决定 highest/first)→ 使用该色</li>
  *   <li>默认色兜底</li>
  * </ol>
- * 厚度：程序化逐物品厚度 &gt; 全局配置 thickness。
+ * 厚度：程序化逐物品厚度 &gt; 资源包定义厚度 &gt; 全局配置 thickness。
  * <p>
  * 1.21.1 附魔读取走 {@code DataComponents.ENCHANTMENTS}(keySet 为
  * {@code Holder<Enchantment>}),颜色按附魔的 ResourceLocation 匹配 → 模组附魔天然可用。
@@ -66,14 +69,19 @@ public final class ColorResolver {
             if (!Config.isItemEnabled(itemId)) {
                 return -1;
             }
-            // 3. 物品固定颜色 (程序化 > 配置)
+            // 3. 资源包轮廓定义 (资源包 > 程序化/配置固定色;动画定义每帧求值)
+            Integer packColor = resourcePackColor(itemId);
+            if (packColor != null) {
+                return packColor;
+            }
+            // 4. 物品固定颜色 (程序化 > 配置)
             Integer itemColor = fixedItemColor(itemId);
             if (itemColor != null) {
                 return itemColor;
             }
         }
 
-        // 4. 附魔取色 (mergeMode: highest / first)
+        // 5. 附魔取色 (mergeMode: highest / first)
         int fallback = Config.defaultColorArgb();
         if (Config.isHighestMerge()) {
             int bestLevel = -1;
@@ -102,6 +110,31 @@ public final class ColorResolver {
             return itemColor;
         }
         return Config.itemColor(itemId);
+    }
+
+    /**
+     * 资源包轮廓定义取色 (静态色或时间循环动画,动画按当前时间逐帧求值)。
+     *
+     * @param itemId 物品注册 id
+     * @return 定义命中的描边色;未命中资源包定义返回 null
+     */
+    private static Integer resourcePackColor(ResourceLocation itemId) {
+        OutlineDef packDef = OutlineResources.def(itemId);
+        if (packDef == null) {
+            return null;
+        }
+        return packDef.isAnimated() ? packDef.colorAt(System.currentTimeMillis()) : packDef.color();
+    }
+
+    /**
+     * 资源包轮廓定义的逐物品厚度。
+     *
+     * @param itemId 物品注册 id
+     * @return 定义中的厚度;未命中定义或定义未声明厚度返回 null
+     */
+    private static Float resourcePackThickness(ResourceLocation itemId) {
+        OutlineDef packDef = OutlineResources.def(itemId);
+        return packDef != null ? packDef.thickness() : null;
     }
 
     /**
@@ -135,7 +168,8 @@ public final class ColorResolver {
      * 唯一可靠线索是 {@code ThrownTrident.isFoil()}(ID_FOIL 布尔，spawn 时随
      * ClientboundSetEntityDataPacket 同步，原版渲染器也靠它画箔光)。
      * <p>
-     * 解析退化为:物品禁用 → -1;物品固定色 (程序化 &gt; 配置)→ 该色;否则默认色。
+     * 解析退化为:物品禁用 → -1;资源包轮廓定义 → 该色/动画色;物品固定色
+     * (程序化 &gt; 配置)→ 该色;否则默认色。
      * 有附魔与否的判断由调用方 (实体 mixin) 用 {@code isFoil()} 完成。
      */
     public static int resolveFoilOnly(ItemStack stack) {
@@ -147,6 +181,10 @@ public final class ColorResolver {
             if (!Config.isItemEnabled(itemId)) {
                 return -1;
             }
+            Integer packColor = resourcePackColor(itemId);
+            if (packColor != null) {
+                return packColor;
+            }
             Integer itemColor = fixedItemColor(itemId);
             if (itemColor != null) {
                 return itemColor;
@@ -155,13 +193,17 @@ public final class ColorResolver {
         return Config.defaultColorArgb();
     }
 
-    /** 物品描边厚度 (像素，可浮点);0 表示不画。程序化注册 > 配置映射 > 全局配置。 */
+    /** 物品描边厚度 (像素，可浮点);0 表示不画。程序化注册 > 资源包定义 > 配置映射 > 全局配置。 */
     public static float thickness(ItemStack stack) {
         ResourceLocation itemId = itemId(stack);
         if (itemId != null) {
             Float t = OutlineColorRegistry.itemThickness(itemId);
             if (t != null) {
                 return t;
+            }
+            Float packThickness = resourcePackThickness(itemId);
+            if (packThickness != null) {
+                return packThickness;
             }
             t = Config.itemThickness(itemId);
             if (t != null) {
@@ -171,13 +213,17 @@ public final class ColorResolver {
         return Config.THICKNESS.get().floatValue();
     }
 
-    /** 盔甲描边厚度 (像素，可浮点);0 表示不画。程序化注册 > 配置映射 > 全局配置。 */
+    /** 盔甲描边厚度 (像素，可浮点);0 表示不画。程序化注册 > 资源包定义 > 配置映射 > 全局配置。 */
     public static float armorThickness(ItemStack stack) {
         ResourceLocation itemId = itemId(stack);
         if (itemId != null) {
             Float t = OutlineColorRegistry.itemThickness(itemId);
             if (t != null) {
                 return t;
+            }
+            Float packThickness = resourcePackThickness(itemId);
+            if (packThickness != null) {
+                return packThickness;
             }
             t = Config.itemThickness(itemId);
             if (t != null) {

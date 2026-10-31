@@ -109,3 +109,23 @@
 - **文档**:AGENTS.md 铁律 1.5 更新为帧感知语义 + 新增 Sodium 兼容注记。
 - **验证**:`verify.bat` 结果见提交说明;实机验收清单(动画恢复/描边随帧/开关
   回归/无 Sodium 环境)待用户进行。
+### 新增:资源包自定义轮廓 —— 逐物品颜色/循环动画/厚度(2026-10-31)
+
+- **功能**:资源包可通过
+  `assets/enchanted_outlines/outlines/<物品命名空间>/<物品路径>.json`
+  为任意物品定义描边:静态色(`mode=static`)或 keyframe 颜色循环(`mode=cycle`,
+  调色板/period_ms/offset_ms/easing 线性或 smoothstep 插值),可选逐物品
+  `thickness`。免附魔语义不变:定义仍只对已附魔、未禁用、在白名单的物品生效。
+- **优先级**:颜色 = 禁用 > RPG 虹灯 > 白名单 > 资源包定义 > 程序化固定色 >
+  配置固定色 > 附魔取色 > 默认;厚度 = 程序化 > 资源包 > 配置映射 > 全局。
+  跨资源包覆盖走原版语义(排前的包胜出),零自定义优先级逻辑。
+- **实现**:`OutlineDef`(不可变定义 + JSON 校验 + 逐帧插值,未知字段忽略,为
+  二期 UV 流光预留)+ `OutlineResources`(`SimpleJsonResourceReloadListener`,
+  挂 `RegisterClientReloadListenersEvent`,加载时校验物品 id 存在,解析失败
+  warn 跳过)。动画逐帧求值,与 RPG 虹灯同款零缓存。
+- **扁平路径适配(动画物品)**:形状纹理缓存键含烘焙色,逐帧连续变化的动画色
+  会按帧爆纹理 → 动画物品改烘 rgb=白形状纹理(缓存键恒定)+ 顶点色逐帧染色
+  (`emitQuadShape` 新增 argb 参数),shader 输出数学等价;动画物品混色决策
+  视为纯色。盔甲/3D/BEWLR 路径颜色本就是逐帧顶点色,零改动自动生效。
+- **测试资源包**:`test-resources/avaritia-glow-pack/`(无尽贪婪风格五色流光,
+  下界合金四件套 600ms 错相);安装与验收说明见其 README。

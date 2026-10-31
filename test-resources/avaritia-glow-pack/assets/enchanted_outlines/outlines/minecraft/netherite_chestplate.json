@@ -1,0 +1,7 @@
+{
+  "mode": "cycle",
+  "colors": ["#9D00FF", "#FF0055", "#FFAA00", "#00E5FF", "#66FF33"],
+  "period_ms": 5000,
+  "offset_ms": 600,
+  "easing": "smooth"
+}

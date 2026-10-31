@@ -1407,6 +1407,11 @@ public final class OutlineRenderer {
         Map<TextureAtlasSprite, int[]> spriteQuadIndices = geo.spriteQuadIndices;
         List<Vec3i> geoNormals = geo.expandNormals;
         Vector3f tmp = new Vector3f();
+        // 资源包动画定义物品(2026-10-31):白色形状烘焙 + 顶点色逐帧染色 —— 形状纹理
+        // 缓存键含烘焙色,动画色逐帧连续变化会按帧爆纹理,故改烘 rgb=白(缓存键恒定,
+        // 走现有 ShapeKey),颜色经顶点色传入(shader: vertexColor×白texel=顶点色,
+        // 与烘焙色数学等价);形状遮罩(alpha)不变,铁律 3 语义不受影响。
+        boolean animated = OutlineResources.isAnimated(currentOutlinedItem());
         // 形状纹理烘焙颜色模式(GUI 内恒纯色,与方块一致;GUI 外按混色配置烘焙
         // "描边色×贴图像素色",贴合物品本体颜色调制)。GUI 由 GuiGraphicsMixin 的
         // IN_GUI_RENDER 标记保证。
@@ -1414,16 +1419,21 @@ public final class OutlineRenderer {
         // needVanillaShaderFallback 门禁 —— 自定义 shader 路径恒烘纯描边色,
         // 无视混色开关;开光影时 GUI 外混色依据配置(GUI 内恒纯色,2026-09-06 约定)。
         // 两种模式各自烘焙(ShapeKey 已含 mix 维度),切换光影自动换纹理。
+        // 动画定义物品视为纯色(混色烘焙同样按帧爆纹理,且动画色再乘物体色无意义)。
         boolean mix = needVanillaShaderFallback() && !isInGuiRender() && Config.ITEM_PIXEL_COLOR_GLINT.get()
-                && !ColorResolver.isSolidOutline(currentOutlinedItem());
-        // 形状纹理烘焙了描边色(顶点色为白,见 emitQuadShape),自定义 shader 必须
-        // 混入 texel.rgb 才能得到描边色,否则输出白色(2026-08-31 事故)。
-        // 光影 fallback 用内置 emissive(texel×vertex) 自动取到烘焙色,此设置仅对
+                && !ColorResolver.isSolidOutline(currentOutlinedItem()) && !animated;
+        // 形状纹理烘焙了描边色(静态路径顶点色为白,见 emitQuadShape;动画路径烘焙白色、
+        // 顶点色为当前动画色),自定义 shader 必须混入 texel.rgb 才能得到描边色,
+        // 否则输出白色(2026-08-31 事故)。
+        // 光影 fallback 用内置 emissive(texel×vertex) 自动取到烘焙色/顶点色,此设置仅对
         // 自定义 shader 生效,统一在此设置。
         setOutlineBlend(1.0f);
+        // 顶点色:静态路径恒白(色已烘焙进纹理);动画路径传当前帧描边色
+        // (参数 color 已由 ColorResolver.resolve 逐帧求值)。
+        int vertexColor = animated ? color : 0xFFFFFFFF;
         for (Map.Entry<TextureAtlasSprite, List<BakedQuad>> entry : bySprite.entrySet()) {
             TextureAtlasSprite sprite = entry.getKey();
-            ResourceLocation tex = shapeTextureFor(sprite, color, false, mix);
+            ResourceLocation tex = shapeTextureFor(sprite, animated ? 0xFFFFFFFF : color, false, mix);
             RenderType rt = needVanillaShaderFallback()
                     ? worldEmissiveOutlineRenderType(tex)
                     : guiOutlineRenderType(tex);
@@ -1437,7 +1447,7 @@ public final class OutlineRenderer {
                     Matrix4f m = pose.last().pose();
                     for (int i = 0; i < spriteQuads.size(); i++) {
                         emitQuadShape(sprite, spriteQuads.get(i), geoNormals.get(quadIndices[i]),
-                                m, consumer, tmp);
+                                m, consumer, tmp, vertexColor);
                     }
                 } finally {
                     pose.popPose();
@@ -1929,7 +1939,7 @@ public final class OutlineRenderer {
 
     /**
      * 单个 quad 以"形状纹理"模式写入:UV 从 atlas 绝对坐标重映射为该 sprite 的相对坐标
-     * (0..1,独立纹理全图),顶点颜色传白色(描边色已烘焙进纹理)。
+     * (0..1,独立纹理全图)。
      *
      * @param sprite      形状纹理对应的 atlas 精灵(用于 UV 重映射)
      * @param quad        要输出的 quad
@@ -1937,9 +1947,11 @@ public final class OutlineRenderer {
      * @param poseMatrix  顶点变换矩阵
      * @param consumer    顶点写入目标
      * @param tmp         复用的矩阵变换结果缓冲
+     * @param argb        顶点颜色:静态路径传白色(描边色已烘焙进纹理),资源包动画路径
+     *                    传当前帧描边色(纹理烘焙为纯白,色由顶点色携带)
      */
     private static void emitQuadShape(TextureAtlasSprite sprite, BakedQuad quad, Vec3i normal,
-                                      Matrix4f poseMatrix, VertexConsumer consumer, Vector3f tmp) {
+                                      Matrix4f poseMatrix, VertexConsumer consumer, Vector3f tmp, int argb) {
         int[] vertices = quad.getVertices();
         float u0 = sprite.getU0(), u1 = sprite.getU1();
         float v0 = sprite.getV0(), v1 = sprite.getV1();
@@ -1953,7 +1965,7 @@ public final class OutlineRenderer {
             float ru = uw > 1e-6f ? (u - u0) / uw : 0.0f;
             float rv = vh > 1e-6f ? (v - v0) / vh : 0.0f;
             Vector3f p = poseMatrix.transformPosition(x, y, z, tmp);
-            consumer.addVertex(p.x(), p.y(), p.z(), 0xFFFFFFFF, ru, rv,
+            consumer.addVertex(p.x(), p.y(), p.z(), argb, ru, rv,
                     OverlayTexture.NO_OVERLAY, FULL_BRIGHT,
                     normal.getX(), normal.getY(), normal.getZ());
         }

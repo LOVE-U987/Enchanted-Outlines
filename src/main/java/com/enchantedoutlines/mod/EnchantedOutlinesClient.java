@@ -5,6 +5,7 @@ import java.io.IOException;
 import com.enchantedoutlines.mod.config.EnchantedConfigScreen;
 import com.enchantedoutlines.mod.outline.OutlineColorEvent;
 import com.enchantedoutlines.mod.outline.OutlineRenderer;
+import com.enchantedoutlines.mod.outline.OutlineResources;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 
 import net.minecraft.client.renderer.ShaderInstance;
@@ -18,6 +19,7 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
+import net.neoforged.neoforge.client.event.RegisterClientReloadListenersEvent;
 import net.neoforged.neoforge.client.event.RegisterShadersEvent;
 import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
 import net.neoforged.neoforge.common.NeoForge;
@@ -39,6 +41,7 @@ public class EnchantedOutlinesClient {
                 (modContainer, parentScreen) -> new EnchantedConfigScreen(parentScreen));
         modEventBus.addListener(this::onRegisterShaders);
         modEventBus.addListener(this::onClientSetup);
+        modEventBus.addListener(this::onRegisterReloadListeners);
         // 进出服务器/世界时清空渲染缓存(issue #1:多人"退出后重进渲染错误"根因是缓存
         // 引用已失效资源;单人世界靠资源重载才清缓存,服务器直连无重载 → 事件兜底)。
         // LevelEvent/ClientPlayerNetworkEvent 都是 NeoForge 游戏总线事件,不能挂 MOD 总线。
@@ -62,6 +65,19 @@ public class EnchantedOutlinesClient {
     /** 客户端启动:触发扩展注册事件(供其他模组注册描边规则)。 */
     private void onClientSetup(FMLClientSetupEvent event) {
         OutlineColorEvent.fire();
+    }
+
+    /**
+     * 注册资源包轮廓定义加载器。
+     * <p>
+     * 资源包加载/切换(F3+T、服务器推送资源包)时自动重扫
+     * {@code assets/enchanted_outlines/outlines/} 下的逐物品定义,供
+     * ColorResolver 查询(资源包定义优先级见 OutlineResources/ColorResolver)。
+     *
+     * @param event 客户端 reload listener 注册事件(MOD 总线,Minecraft 构造期间触发)
+     */
+    private void onRegisterReloadListeners(RegisterClientReloadListenersEvent event) {
+        event.registerReloadListener(OutlineResources.create());
     }
 
     /**
