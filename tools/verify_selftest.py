@@ -68,6 +68,11 @@ public class VerifySelfTestFixture {
     // 违规：铁律 7 —— markChanged 未使配置缓存失效
     void markChanged() {
     }
+
+    // 违规：铁律 6.9 —— thickness 与裸数字字面量相乘(厚度系数必须走具名常量/配置)
+    void selfTestBadThickness(float thickness) {
+        float offset = thickness * 0.09f;
+    }
 }
 """
 
@@ -205,6 +210,7 @@ class SelfTest:
         self.expect_error("铁律 6   System.out 残留被捕获", "铁律 6", report)
         self.expect_error("铁律 6.7 未闭合批次被捕获", "铁律 6.7", report)
         self.expect_error("铁律 7   markChanged 缺失效被捕获", "铁律 7", report)
+        self.expect_error("铁律 6.9 厚度裸系数被捕获", "铁律 6.9", report)
         self.expect_warn("mixin 注册  未注册类告警", "mixin 注册", "VerifySelfTest", report)
         os.remove(self.fixture_outline)
         os.remove(self.fixture_mixin)

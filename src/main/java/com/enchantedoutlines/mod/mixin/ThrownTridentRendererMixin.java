@@ -6,6 +6,7 @@ import com.enchantedoutlines.mod.outline.ColorResolver;
 import com.enchantedoutlines.mod.outline.OutlineRenderer;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.model.geom.EntityModelSet;
 import net.minecraft.client.model.geom.ModelLayers;
 import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -46,6 +47,10 @@ public abstract class ThrownTridentRendererMixin {
     @Unique
     private ModelPart cachedTridentRoot;
 
+    /** 缓存归属的 EntityModelSet 实例:资源重载时 EntityModelSet 整体重建,归属不同即缓存失效自校验。 */
+    @Unique
+    private EntityModelSet cachedTridentOwner;
+
     @Inject(method = "render(Lnet/minecraft/world/entity/projectile/ThrownTrident;FFLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;I)V",
             at = @At("HEAD"))
     private void enchantedoutlines$thrownTridentOutline(ThrownTrident trident, float yRot, float partialTick,
@@ -76,11 +81,15 @@ public abstract class ThrownTridentRendererMixin {
         try {
             pose.mulPose(Axis.YP.rotationDegrees(Mth.lerp(partialTick, trident.yRotO, trident.getYRot()) - 90.0F));
             pose.mulPose(Axis.ZP.rotationDegrees(Mth.lerp(partialTick, trident.xRotO, trident.getXRot()) + 90.0F));
-            // 三叉戟实体模型 root(与 ThrownTridentRenderer.model 同一 bake 层)
+            // 三叉戟实体模型 root(与 ThrownTridentRenderer.model 同一 bake 层)。
+            // 自校验失效(2026-11-01):资源重载时 EntityModelSet 整体重建,比对归属实例,
+            // 不同即重烘 —— 替代旧"永不清理"缓存(缓存登记铁律:禁止新增失效链之外的缓存)。
+            EntityModelSet models = Minecraft.getInstance().getEntityModels();
             ModelPart root = cachedTridentRoot;
-            if (root == null) {
-                root = Minecraft.getInstance().getEntityModels().bakeLayer(ModelLayers.TRIDENT);
+            if (root == null || cachedTridentOwner != models) {
+                root = models.bakeLayer(ModelLayers.TRIDENT);
                 cachedTridentRoot = root;
+                cachedTridentOwner = models;
             }
             OutlineRenderer.INSTANCE.renderEntityModelOutline(pose, root, color, thickness);
         } catch (Throwable ignored) {

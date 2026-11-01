@@ -16,6 +16,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.mojang.blaze3d.vertex.PoseStack;
 
 import org.spongepowered.asm.mixin.Mixin;
@@ -76,12 +78,18 @@ public abstract class ItemInHandRendererMixin {
                                                      ItemDisplayContext context, boolean leftHand,
                                                      PoseStack pose, MultiBufferSource buffers,
                                                      int light, CallbackInfo ci) {
+        // 空物品直接跳过:方法体 if(!isEmpty) 不会执行本体渲染,标记若在此设立将无人恢复
+        // (WrapOperation 恢复点不触发 → 异常滞留)。
+        if (stack.isEmpty()) {
+            return;
+        }
         // Sodium 动画纹理兼容(2026-10-25):附魔物品精灵标记 active,防"仅动画可见纹理"
         // 优化冻结附魔物品动画。独立于描边总开关,内部自行做门禁;seed 与本体
         // renderItem -> renderStatic 一致(entity.getId() + context.ordinal())。
         SodiumCompat.markStackSprites(stack, entity,
                 entity != null ? entity.getId() + context.ordinal() : 0);
         // 标记当前处于 ItemInHandRenderer 上下文,让 ItemRendererMixin 跳过重复描边
+        // (恢复点 = 下方 WrapOperation 的 finally,覆盖本体渲染异常路径)
         OutlineRenderer.markItemInHandRender(true);
         // 逐物品覆盖标记:深层混色决策(mix/blend/纯白判定)经此查询 solidColorItems
         OutlineRenderer.markOutlinedItem(stack);
@@ -99,14 +107,26 @@ public abstract class ItemInHandRendererMixin {
         }
     }
 
-    /** 恢复标记(renderItem 方法体正常返回时)。 */
-    @Inject(method = "renderItem(Lnet/minecraft/world/entity/LivingEntity;Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/item/ItemDisplayContext;ZLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;I)V",
-            at = @At("RETURN"))
-    private void enchantedoutlines$restoreFlag(LivingEntity entity, ItemStack stack,
-                                               ItemDisplayContext context, boolean leftHand,
-                                               PoseStack pose, MultiBufferSource buffers,
-                                               int light, CallbackInfo ci) {
-        OutlineRenderer.markItemInHandRender(false);
+    /**
+     * 恢复标记(包住方法体内的 {@code ItemRenderer.renderStatic} 调用)。
+     * <p>
+     * 旧实现用 RETURN 注入恢复,但目标方法体异常时 RETURN 不执行,标记永久滞留
+     * true → ItemRendererMixin 的手持分支被持续跳过,手持描边失效。改用 MixinExtras
+     * WrapOperation 包住本体渲染调用,finally 恢复对异常路径全覆盖。
+     */
+    @WrapOperation(method = "renderItem(Lnet/minecraft/world/entity/LivingEntity;Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/item/ItemDisplayContext;ZLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;I)V",
+            at = @At(value = "INVOKE",
+                    target = "Lnet/minecraft/client/renderer/entity/ItemRenderer;renderStatic(Lnet/minecraft/world/entity/LivingEntity;Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/item/ItemDisplayContext;ZLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;Lnet/minecraft/world/level/Level;III)Lnet/minecraft/client/resources/model/BakedModel;"))
+    private BakedModel enchantedoutlines$restoreFlag(ItemRenderer instance, LivingEntity entity, ItemStack stack,
+                                                     ItemDisplayContext context, boolean leftHand,
+                                                     PoseStack pose, MultiBufferSource buffers, Level level,
+                                                     int light, int overlay, int seed,
+                                                     Operation<BakedModel> original) {
+        try {
+            return original.call(instance, entity, stack, context, leftHand, pose, buffers, level, light, overlay, seed);
+        } finally {
+            OutlineRenderer.markItemInHandRender(false);
+        }
     }
 
     /**

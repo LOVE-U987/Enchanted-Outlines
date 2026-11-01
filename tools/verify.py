@@ -376,6 +376,38 @@ def check_markchanged_invalidates(reporter: vc.Reporter) -> None:
         reporter.ok("铁律 7", f"{checked} 处 markChanged() 均会使配置缓存失效")
 
 
+def check_thickness_semantics(reporter: vc.Reporter) -> None:
+    """跨路径描边厚度语义一致（铁律 6.9 兄弟路径像素语义）。
+
+    事故（v0.1.7）：鞘翅曾用独立硬编码系数 0.09 + refDiag 0.701，外扩像素约为
+    盔甲的 3 倍多（实测"盔甲 8 清晰、鞘翅 8 很宽"，见 AGENTS.md 铁律 6.5）。
+    厚度换算一律走具名常量/配置（THICKNESS_SCALE / ARMOR_INFLATE_PER_THICKNESS /
+    bewlrInflatePerThickness() / TACZ_FIRST_PERSON_THICKNESS_SCALE 等），禁止
+    thickness 与裸数字字面量直接相乘 —— 新增路径或移植重写时手滑写魔法系数在此拦截。
+    """
+    # thickness 与裸数字字面量相乘(含 *= 复合赋值与括号包裹字面量);除法(/16.0f 为
+    # GUI 像素语义,合法)不匹配,具名常量/配置是标识符也不匹配 → 对现有代码零误报。
+    number = r"[-+]?(?:\d+\.?\d*|\.\d+)[fFdD]?"
+    pattern = re.compile(
+        r"\bthickness\b\s*\*=?\s*" + number
+        + r"|" + number + r"\s*\*\s*\bthickness\b"
+        + r"|\bthickness\b\s*\*=?\s*\(\s*" + number + r"\s*\)")
+    hits = 0
+    for path in vc.iter_java_files():
+        skel = vc.strip_java(vc.read_text(path))
+        for m in pattern.finditer(skel):
+            hits += 1
+            reporter.error(
+                "铁律 6.9",
+                "thickness 与裸数字字面量直接相乘:厚度系数必须走具名常量或配置"
+                "(THICKNESS_SCALE / ARMOR_INFLATE_PER_THICKNESS / bewlrInflatePerThickness 等,"
+                "见 AGENTS.md 铁律 6.5/6.9 兄弟路径像素语义;历史事故:鞘翅独立系数 0.09)",
+                path, vc.line_of(skel, m.start()),
+            )
+    if hits == 0:
+        reporter.ok("铁律 6.9", "各描边路径厚度换算均走具名常量/配置(无裸字面量系数)")
+
+
 def check_temp_diagnostics(reporter: vc.Reporter) -> None:
     """铁律 6：临时诊断代码必须清理。
 
@@ -612,6 +644,7 @@ CHECKS: tuple[tuple[str, str, object], ...] = (
     ("rules", "缓存登记 资源重载清理链", check_cache_registration),
     ("rules", "铁律 7   配置缓存失效", check_markchanged_invalidates),
     ("rules", "mixin 注册一致性", check_mixins_registration),
+    ("rules", "铁律 6.9 描边厚度语义一致", check_thickness_semantics),
     ("rules", "铁律 8   验证工具自洽", check_required_tools),
     ("i18n", "配置 / 语言键一致性", check_lang_keys),
 )

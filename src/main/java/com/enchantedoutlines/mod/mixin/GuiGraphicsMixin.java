@@ -7,6 +7,7 @@ import com.enchantedoutlines.mod.outline.SodiumCompat;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.entity.ItemRenderer;
 import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.client.resources.model.ModelResourceLocation;
@@ -17,6 +18,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.mojang.blaze3d.vertex.PoseStack;
 
 import org.spongepowered.asm.mixin.Mixin;
@@ -47,14 +50,19 @@ public abstract class GuiGraphicsMixin {
             at = @At("HEAD"))
     private void enchantedoutlines$renderOutline(LivingEntity entity, Level level, ItemStack stack,
                                                  int x, int y, int seed, int quadSize, CallbackInfo ci) {
+        // 空物品直接跳过:方法体 if(!isEmpty) 不会执行本体渲染,标记若在此设立将无人恢复
+        // (WrapOperation 恢复点不触发 → 异常滞留)。
+        if (stack.isEmpty()) {
+            return;
+        }
         // Sodium 动画纹理兼容(2026-10-25):附魔物品精灵标记 active,防"仅动画可见纹理"
         // 优化冻结附魔物品动画。独立于描边总开关(冻结与描边无关),内部自行做门禁。
         SodiumCompat.markStackSprites(stack, level, entity, seed);
-        // ⚠️ GUI 屏幕空间渲染标记(HEAD 设 true / RETURN 恢复 false):背包/容器/快捷栏等
-        // 物品图标是 2D 屏幕绘制,不经 Iris 光影 —— 期间 needVanillaShaderFallback() 必须
-        // 恒 false(自定义 shader),否则开光影时扁平/Geo/BEWLR 物品轮廓会错误 fallback 到
-        // 世界专用 emissive RenderType → 颜色变淡灰(2026-08-31 事故,方块走
-        // handOutlineRenderType 恒自定义不受影响,所以"物品灰、方块正常")。
+        // ⚠️ GUI 屏幕空间渲染标记(HEAD 设 true / 下方 WrapOperation 的 finally 恢复):
+        // 背包/容器/快捷栏等物品图标是 2D 屏幕绘制,不经 Iris 光影 —— 期间
+        // needVanillaShaderFallback() 必须恒 false(自定义 shader),否则开光影时扁平/Geo/
+        // BEWLR 物品轮廓会错误 fallback 到世界专用 emissive RenderType → 颜色变淡灰
+        // (2026-08-31 事故,方块走 handOutlineRenderType 恒自定义不受影响,所以"物品灰、方块正常")。
         OutlineRenderer.markGuiRender(true);
         // 逐物品覆盖标记:深层混色决策(mix/纯白判定)经此查询 solidColorItems
         OutlineRenderer.markOutlinedItem(stack);
@@ -143,11 +151,26 @@ public abstract class GuiGraphicsMixin {
                 self.pose(), model, x, y, quadSize, color, thickness);
     }
 
-    /** 恢复 GUI 渲染标记(renderItem 方法体正常返回时)。 */
-    @Inject(method = "renderItem(Lnet/minecraft/world/entity/LivingEntity;Lnet/minecraft/world/level/Level;Lnet/minecraft/world/item/ItemStack;IIII)V",
-            at = @At("RETURN"))
-    private void enchantedoutlines$restoreGuiFlag(LivingEntity entity, Level level, ItemStack stack,
-                                                  int x, int y, int seed, int quadSize, CallbackInfo ci) {
-        OutlineRenderer.markGuiRender(false);
+    /**
+     * 恢复 GUI 渲染标记(包住方法体内的 {@code ItemRenderer.render} 调用)。
+     * <p>
+     * 旧实现用 RETURN 注入恢复标记,但 {@code GuiGraphics.renderItem} 方法体自带
+     * try/catch(Throwable) → 包装 ReportedException 重抛:本体渲染一旦异常,RETURN
+     * 不执行,IN_GUI_RENDER 永久滞留 true → 之后 needVanillaShaderFallback() 恒 false,
+     * 开光影用户的世界描边整体失效(直到下次 GUI 正常渲染)。改用 MixinExtras
+     * WrapOperation 包住本体渲染调用,finally 恢复对异常路径全覆盖。
+     */
+    @WrapOperation(method = "renderItem(Lnet/minecraft/world/entity/LivingEntity;Lnet/minecraft/world/level/Level;Lnet/minecraft/world/item/ItemStack;IIII)V",
+            at = @At(value = "INVOKE",
+                    target = "Lnet/minecraft/client/renderer/entity/ItemRenderer;render(Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/item/ItemDisplayContext;ZLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;IILnet/minecraft/client/resources/model/BakedModel;)V"))
+    private void enchantedoutlines$restoreGuiFlag(ItemRenderer instance, ItemStack stack, ItemDisplayContext context,
+                                                  boolean leftHand, PoseStack pose, MultiBufferSource buffers,
+                                                  int light, int overlay, BakedModel model,
+                                                  Operation<Void> original) {
+        try {
+            original.call(instance, stack, context, leftHand, pose, buffers, light, overlay, model);
+        } finally {
+            OutlineRenderer.markGuiRender(false);
+        }
     }
 }

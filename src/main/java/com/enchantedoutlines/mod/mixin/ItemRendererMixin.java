@@ -108,6 +108,13 @@ public abstract class ItemRendererMixin {
             model = getModel(SPYGLASS_MODEL);
         }
         float thickness = ColorResolver.thickness(stack);
+        // 展示框/掉落物独立厚度(2026-11-01):-1 = 跟随全局;>=0 按场景覆盖。
+        // 展示框物品是贴墙背景物体,常需要比手持更粗的描边才能看清。
+        if (context == ItemDisplayContext.FIXED && Config.ITEM_FRAME_THICKNESS.get() >= 0.0) {
+            thickness = Config.ITEM_FRAME_THICKNESS.get().floatValue();
+        } else if (context == ItemDisplayContext.GROUND && Config.GROUND_THICKNESS.get() >= 0.0) {
+            thickness = Config.GROUND_THICKNESS.get().floatValue();
+        }
         if (thickness <= 0f) {
             return;
         }

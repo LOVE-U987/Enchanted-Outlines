@@ -228,6 +228,11 @@
   `Config.ARMOR_PIXEL_COLOR_GLINT` 设 blend(<b>2026-10-02 语义修正,用户决策:
   不开光影时代码级强制纯色(blend 恒 0、扁平 mix 恒 false,无视混色开关),混色仅在
   光影兼容模式依据配置(默认 true 不变)</b>)。uniform 全局、每批 flush 前设置。
+  <b>cutout 硬切变体(2026-11-01)</b>:物品展示框(FIXED,opaque=true)的光影 fallback
+  改走原版 <code>rendertype_entity_cutout_no_cull</code> 硬切(alpha 阈值 discard、
+  无混合;统一工厂 worldOutlineRenderType(tex, cutout) + worldCutoutRenderTypes
+  独立缓存,与 emissive 缓存分表),轮廓完全不透明 —— 旧"fallback 下统一半透明"
+  已废弃。非 emissive → 乘 lightmap,描边随环境光变暗,接受。
 - **TACZ 专项(2026-10-18 推倒重做:TaCZ 内部注入走查,`Config.ENABLE_TACZ_COMPAT`
   默认 true)**:TACZ 枪械是自绘 Bedrock BEWLR(`GunItemRendererWrapper`,
   jar-in-jar simplebedrockmodel)。旧"通用捕获"对 TaCZ 无用的两大根因(反编译
@@ -364,7 +369,7 @@
 
 ### 8. 验证工具优先用 Python;提交前必须过 VERIFY 门禁
 - **一键门禁**:`.\verify.bat`(或 `python tools/verify.py`)—— 编译门禁 +
-  上文铁律静态扫描(铁律 1/1.5/2/6/6.7/7/8、缓存登记、mixin 注册)+
+  上文铁律静态扫描(铁律 1/1.5/2/6/6.7/6.9/7/8、缓存登记、mixin 注册)+
   zh_cn/en_us 配置键一致性。选项:`--no-compile`(跳过 gradle,秒级)、
   `--only rules`、`--json`、`--list`、`--install-hook`(装 git pre-commit,可选)。
   确凿违规退出码 1(可用于 CI/pre-commit),启发式提示只告警不阻塞。

@@ -110,6 +110,9 @@ final class BewlrCapture {
                                          int verts, float sx, float sy, float sz, float centerLen) {
         String itemId = String.valueOf(BuiltInRegistries.ITEM.getKey(stack.getItem()));
         long now = System.currentTimeMillis();
+        if (GUARD_LOG_THROTTLE.size() > OutlineRenderer.LOG_THROTTLE_MAX_ENTRIES) {
+            GUARD_LOG_THROTTLE.clear(); // 容量兜底:仅丢"上次打印时刻",节流窗口重来
+        }
         Long last = GUARD_LOG_THROTTLE.put(reason + "#" + itemId + "#" + context, now);
         if (last != null && now - last < 10_000L) {
             return; // 10 秒窗口内同一(物品,context,原因)只打印一次
@@ -129,6 +132,9 @@ final class BewlrCapture {
      */
     private static void logCaptureDiag(String key, String detail) {
         long now = System.currentTimeMillis();
+        if (GUARD_LOG_THROTTLE.size() > OutlineRenderer.LOG_THROTTLE_MAX_ENTRIES) {
+            GUARD_LOG_THROTTLE.clear(); // 容量兜底:仅丢"上次打印时刻",节流窗口重来
+        }
         Long last = GUARD_LOG_THROTTLE.put(key, now);
         if (last != null && now - last < 10_000L) {
             return; // 10 秒窗口内同键只打印一次

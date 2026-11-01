@@ -2,6 +2,7 @@ package com.enchantedoutlines.mod.config;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.function.Consumer;
 
 import net.minecraft.client.gui.GuiGraphics;
@@ -9,10 +10,12 @@ import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.MultiLineEditBox;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.util.Mth;
 
 import net.neoforged.neoforge.common.ModConfigSpec;
@@ -66,9 +69,14 @@ public class EnchantedConfigScreen extends Screen {
     private Button doneButton;
     private float savedFlash = 0f;
     private long openTime;
+    /** defaultColor 行的 hex 输入框(色块入口画在其左侧;null = 当前分类无该行)。 */
+    private EditBox colorRowBox;
+    /** defaultColor 行绑定的配置值(色块点击弹出色板时回写)。 */
+    private ModConfigSpec.ConfigValue<String> colorRowValue;
 
-    // 分类键：general → colors → advanced → experimental
-    private static final String[] CATEGORIES = {"general", "colors", "advanced", "experimental"};
+    // 分类键:general → colors → items → shaders → compat → advanced
+    // (2026-11-01 重排:实验性分类删除,RPG 虹灯转正入「颜色与取色」)
+    private static final String[] CATEGORIES = {"general", "colors", "items", "shaders", "compat", "advanced"};
 
     public EnchantedConfigScreen(Screen parent) {
         super(Component.translatable(PREFIX + ".title"));
@@ -88,6 +96,8 @@ public class EnchantedConfigScreen extends Screen {
         rows.clear();
         configWidgets.clear();
         categoryButtons.clear();
+        colorRowBox = null;
+        colorRowValue = null;
         scrollOffset = 0;
 
         int panelTop = HEADER_HEIGHT;
@@ -96,40 +106,59 @@ public class EnchantedConfigScreen extends Screen {
         // 分类导航（侧边栏）- 按功能分组
         addCategoryButton(0, "general");
         addCategoryButton(1, "colors");
-        addCategoryButton(2, "advanced");
-        addCategoryButton(3, "experimental");
+        addCategoryButton(2, "items");
+        addCategoryButton(3, "shaders");
+        addCategoryButton(4, "compat");
+        addCategoryButton(5, "advanced");
 
-        // 内容行
+        // 内容行(2026-11-01 重排:6 分类,全部配置项按语义归位;
+        // 实验性分类已删除,RPG 虹灯转正入「颜色与取色」)
         int y = panelTop + 12;
-        if (selectedCategory == 0) { // general
-            y = addBooleanRow(y, "enable", Config.ENABLE, widgetX);
-            y = addDoubleRow(y, "thickness", Config.THICKNESS, 0.0, 8.0, widgetX);
-            y = addDoubleRow(y, "armorThickness", Config.ARMOR_THICKNESS, 0.0, 20.0, widgetX);
-            y = addBooleanRow(y, "itemPixelColorGlint", Config.ITEM_PIXEL_COLOR_GLINT, widgetX);
-            y = addBooleanRow(y, "armorPixelColorGlint", Config.ARMOR_PIXEL_COLOR_GLINT, widgetX);
-            y = addBooleanRow(y, "armorUniformExpand", Config.ARMOR_UNIFORM_EXPAND, widgetX);
-            y = addBooleanRow(y, "outlineExposureReduce", Config.OUTLINE_EXPOSURE_REDUCE, widgetX);
-            y = addBooleanRow(y, "sodiumAnimatedTextureCompat", Config.SODIUM_TEXTURE_COMPAT, widgetX);
-        } else if (selectedCategory == 1) { // colors
-            y = addColorRow(y, "defaultColor", Config.DEFAULT_COLOR, widgetX);
-            y = addLongTextRow(y, "enchantColors", Config.ENCHANT_COLORS, widgetX);
-            y = addLongTextRow(y, "itemColors", Config.ITEM_COLORS, widgetX);
-            y = addLongTextRow(y, "enabledItems", Config.ENABLED_ITEMS, widgetX);
-            y = addLongTextRow(y, "disabledItems", Config.DISABLED_ITEMS, widgetX);
-            y = addLongTextRow(y, "itemThicknesses", Config.ITEM_THICKNESSES, widgetX);
-            y = addLongTextRow(y, "solidColorItems", Config.SOLID_COLOR_ITEMS, widgetX);
-        } else if (selectedCategory == 2) { // advanced
-            y = addDoubleRow(y, "bewlr3dScale", Config.BEWLR_3D_SCALE, 0.05, 1.0, widgetX);
-            y = addBooleanRow(y, "bewlr3dPerCube", Config.BEWLR_3D_PER_CUBE, widgetX);
-            y = addBooleanRow(y, "bewlrCaptureV2", Config.BEWLR_CAPTURE_V2, widgetX);
-            y = addBooleanRow(y, "bewlrGlobalBufferSwap", Config.BEWLR_GLOBAL_BUFFER_SWAP, widgetX);
-            y = addBooleanRow(y, "taczCompat", Config.ENABLE_TACZ_COMPAT, widgetX);
-            y = addDoubleRow(y, "taczFirstPersonThicknessScale", Config.TACZ_FIRST_PERSON_THICKNESS_SCALE, 0.5, 4.0, widgetX);
-            y = addBooleanRow(y, "hazenCompat", Config.ENABLE_HAZEN_COMPAT, widgetX);
-            y = addLongTextRow(y, "bewlrNamespaceAdapters", Config.BEWLR_NAMESPACE_ADAPTERS, widgetX);
-            y = addMergeModeRow(y, widgetX);
-        } else { // experimental
-            y = addBooleanRow(y, "enableRPGRainbow", Config.ENABLE_RPG_RAINBOW, widgetX);
+        switch (selectedCategory) {
+            case 0 -> { // general 通用
+                y = addBooleanRow(y, "enable", Config.ENABLE, widgetX);
+                y = addDoubleRow(y, "thickness", Config.THICKNESS, 0.0, 8.0, widgetX);
+                y = addDoubleRow(y, "armorThickness", Config.ARMOR_THICKNESS, 0.0, 20.0, widgetX);
+                y = addDoubleRow(y, "itemFrameThickness", Config.ITEM_FRAME_THICKNESS, -1.0, 8.0, widgetX);
+                y = addDoubleRow(y, "groundThickness", Config.GROUND_THICKNESS, -1.0, 8.0, widgetX);
+            }
+            case 1 -> { // colors 颜色与取色
+                y = addColorRow(y, "defaultColor", Config.DEFAULT_COLOR, widgetX);
+                y = addMergeModeRow(y, widgetX);
+                y = addLongTextRow(y, "enchantColors", Config.ENCHANT_COLORS, widgetX);
+                y = addLongTextRow(y, "itemColors", Config.ITEM_COLORS, widgetX);
+                y = addBooleanRow(y, "enchantRarityAutoColor", Config.ENCHANT_RARITY_AUTO_COLOR, widgetX);
+                y = addLongTextRow(y, "rarityColors", Config.RARITY_COLORS, widgetX);
+                y = addBooleanRow(y, "enableRPGRainbow", Config.ENABLE_RPG_RAINBOW, widgetX);
+                y = addBooleanRow(y, "disableVanillaGlint", Config.DISABLE_VANILLA_GLINT, widgetX);
+                y = addBooleanRow(y, "pulseEffect", Config.PULSE_EFFECT, widgetX);
+                y = addDoubleRow(y, "pulseSpeed", Config.PULSE_SPEED, 0.2, 3.0, widgetX);
+            }
+            case 2 -> { // items 逐物品规则
+                y = addLongTextRow(y, "enabledItems", Config.ENABLED_ITEMS, widgetX);
+                y = addLongTextRow(y, "disabledItems", Config.DISABLED_ITEMS, widgetX);
+                y = addLongTextRow(y, "itemThicknesses", Config.ITEM_THICKNESSES, widgetX);
+                y = addLongTextRow(y, "solidColorItems", Config.SOLID_COLOR_ITEMS, widgetX);
+            }
+            case 3 -> { // shaders 光影兼容
+                y = addBooleanRow(y, "itemPixelColorGlint", Config.ITEM_PIXEL_COLOR_GLINT, widgetX);
+                y = addBooleanRow(y, "armorPixelColorGlint", Config.ARMOR_PIXEL_COLOR_GLINT, widgetX);
+                y = addBooleanRow(y, "outlineExposureReduce", Config.OUTLINE_EXPOSURE_REDUCE, widgetX);
+            }
+            case 4 -> { // compat 模组兼容
+                y = addBooleanRow(y, "taczCompat", Config.ENABLE_TACZ_COMPAT, widgetX);
+                y = addDoubleRow(y, "taczFirstPersonThicknessScale", Config.TACZ_FIRST_PERSON_THICKNESS_SCALE, 0.5, 4.0, widgetX);
+                y = addBooleanRow(y, "hazenCompat", Config.ENABLE_HAZEN_COMPAT, widgetX);
+                y = addLongTextRow(y, "bewlrNamespaceAdapters", Config.BEWLR_NAMESPACE_ADAPTERS, widgetX);
+                y = addBooleanRow(y, "sodiumAnimatedTextureCompat", Config.SODIUM_TEXTURE_COMPAT, widgetX);
+            }
+            default -> { // advanced 高级(BEWLR 算法与性能)
+                y = addDoubleRow(y, "bewlr3dScale", Config.BEWLR_3D_SCALE, 0.05, 1.0, widgetX);
+                y = addBooleanRow(y, "bewlr3dPerCube", Config.BEWLR_3D_PER_CUBE, widgetX);
+                y = addBooleanRow(y, "bewlrCaptureV2", Config.BEWLR_CAPTURE_V2, widgetX);
+                y = addBooleanRow(y, "bewlrGlobalBufferSwap", Config.BEWLR_GLOBAL_BUFFER_SWAP, widgetX);
+                y = addIntRow(y, "shapeTextureCacheLimit", Config.SHAPE_TEXTURE_CACHE_LIMIT, 32, 2048, widgetX);
+            }
         }
 
         // 底部完成按钮
@@ -141,9 +170,15 @@ public class EnchantedConfigScreen extends Screen {
 
     private void addCategoryButton(int index, String key) {
         int x = PADDING + 6;
-        int y = HEADER_HEIGHT + 10 + index * 30;
+        // 动态步距(2026-11-01,用户反馈:小 GUI 高度下第 6 个分类按钮越出面板底部):
+        // 首按钮固定在面板顶部,步距按可用高度压缩 —— 下限 24(留 2px 间隙),上限 30
+        // (与旧固定布局一致,大屏布局不变)。
+        int top = HEADER_HEIGHT + 10;
+        int bottom = this.height - FOOTER_HEIGHT - 10;
+        int step = Math.max(24, Math.min(30, (bottom - top - 22) / (CATEGORIES.length - 1)));
+        int y = top + index * step;
         int w = SIDEBAR_WIDTH - 12;
-        CategoryButton button = new CategoryButton(index, selectedCategory == index, x, y, w, 22,
+        CategoryButton button = new CategoryButton(selectedCategory == index, x, y, w, 22,
                 Component.translatable(PREFIX + ".category." + key), b -> {
                     if (index != selectedCategory) {
                         selectedCategory = index;
@@ -189,6 +224,37 @@ public class EnchantedConfigScreen extends Screen {
         return y + ROW_HEIGHT;
     }
 
+    /**
+     * 整数输入行(EditBox,范围裁剪,立即写盘)。
+     *
+     * @param y       行顶 y
+     * @param key     配置键(语言键前缀)
+     * @param value   整型配置值
+     * @param min     允许最小值(越界裁剪)
+     * @param max     允许最大值(越界裁剪)
+     * @param widgetX 控件 x
+     * @return 下一行 y
+     */
+    private int addIntRow(int y, String key, ModConfigSpec.IntValue value, int min, int max, int widgetX) {
+        EditBox box = new EditBox(this.font, widgetX, y + 4, WIDGET_WIDTH, 20, Component.empty());
+        // 整数输入上限:范围 32-2048 最长 4 位,限制后可防止粘贴超长字符串
+        box.setMaxLength(5);
+        box.setResponder(s -> {
+            try {
+                int v = Integer.parseInt(s.trim());
+                v = Math.max(min, Math.min(max, v));
+                if (v != value.get()) {
+                    value.set(v);
+                    markChanged();
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        });
+        box.setValue(String.valueOf(value.get()));
+        registerRow(key, box);
+        return y + ROW_HEIGHT;
+    }
+
     private int addMergeModeRow(int y, int widgetX) {
         CycleButton<String> button = CycleButton.<String>builder(v -> Component.translatable(PREFIX + ".mergeMode." + v))
                 .withValues(List.of("highest", "first"))
@@ -203,7 +269,8 @@ public class EnchantedConfigScreen extends Screen {
     }
 
     private int addColorRow(int y, String key, ModConfigSpec.ConfigValue<String> value, int widgetX) {
-        EditBox box = new EditBox(this.font, widgetX, y + 4, WIDGET_WIDTH, 20, Component.empty());
+        // 输入框右移 32px,左侧留出色块入口(render/mouseClicked 按行位置同步绘制,2026-11-01)
+        EditBox box = new EditBox(this.font, widgetX + 32, y + 4, WIDGET_WIDTH - 32, 20, Component.empty());
         // 颜色最长 #RRGGBB 共 7 位,限制后多余的字符无法输入
         box.setMaxLength(7);
         box.setResponder(s -> {
@@ -214,6 +281,8 @@ public class EnchantedConfigScreen extends Screen {
             }
         });
         box.setValue(value.get());
+        this.colorRowBox = box;
+        this.colorRowValue = value;
         registerRow(key, box);
         return y + ROW_HEIGHT;
     }
@@ -297,6 +366,15 @@ public class EnchantedConfigScreen extends Screen {
                 w.render(gui, mouseX, mouseY, partialTick);
             }
         }
+        // defaultColor 行色块入口(2026-11-01):画在行 EditBox 左侧 28px,点击弹出色板
+        if (colorRowBox != null && colorRowBox.visible) {
+            int sx = colorRowBox.getX() - 32;
+            int sy = colorRowBox.getY();
+            Integer rgb = Config.parseHex(colorRowValue.get());
+            gui.fill(sx, sy, sx + 28, sy + 20, 0xFF000000 | (rgb != null ? rgb : 0x55FFFF));
+            boolean hover = mouseX >= sx && mouseX < sx + 28 && mouseY >= sy && mouseY < sy + 20;
+            gui.renderOutline(sx - 1, sy - 1, 30, 22, hover ? 0xFFFFFFFF : 0xFF2A2F38);
+        }
         gui.disableScissor();
 
         renderScrollbar(gui, panelTop, panelBottom);
@@ -355,6 +433,21 @@ public class EnchantedConfigScreen extends Screen {
     }
 
     @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        // defaultColor 行色块入口:点击弹出色板选择器
+        if (colorRowBox != null && colorRowBox.visible
+                && mouseX >= colorRowBox.getX() - 32 && mouseX < colorRowBox.getX() - 4
+                && mouseY >= colorRowBox.getY() && mouseY < colorRowBox.getY() + 20) {
+            this.minecraft.setScreen(new ColorSwatchScreen(this, colorRowValue.get(), newValue -> {
+                colorRowValue.set(newValue);
+                markChanged();
+            }));
+            return true;
+        }
+        return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
     public void tick() {
         super.tick();
         savedFlash = Math.max(0f, savedFlash - 0.06f);
@@ -384,7 +477,7 @@ public class EnchantedConfigScreen extends Screen {
     private final class CategoryButton extends Button {
         private final boolean selected;
 
-        CategoryButton(int index, boolean selected, int x, int y, int w, int h,
+        CategoryButton(boolean selected, int x, int y, int w, int h,
                        Component message, OnPress onPress) {
             super(x, y, w, h, message, onPress, DEFAULT_NARRATION);
             this.selected = selected;
@@ -419,7 +512,7 @@ public class EnchantedConfigScreen extends Screen {
         private final String tooltipKey;
         private final String initial;
         private final Consumer<String> onSave;
-        private EditBox box;
+        private MultiLineEditBox box;
 
         LongTextEditScreen(Screen parent, Component title, String tooltipKey, String initial, Consumer<String> onSave) {
             super(title);
@@ -432,10 +525,10 @@ public class EnchantedConfigScreen extends Screen {
 
         @Override
         protected void init() {
-            box = new EditBox(this.font, this.width / 2 - 200, this.height / 2 - 34, 400, 20, Component.empty());
-            // 必须先设上限再赋值:EditBox#setValue 会按当前 maxLength(默认 32)截断字符串,
-            // 若顺序颠倒,超长配置(如默认 enchantColors 远超 32 字符)在打开编辑框时就会被截断,保存即破坏配置。
-            box.setMaxLength(16384);
+            // 多行可滚动编辑(2026-11-01,用户反馈:长配置单行编辑无法纵览、tooltip 溢出)。
+            // MultiLineEditBox 自带纵向滚动条;无 maxLength 限制(原单行版需 16384 上限),直接 setValue。
+            box = new MultiLineEditBox(this.font, this.width / 2 - 200, this.height / 2 - 12, 400, 88,
+                    Component.empty(), Component.empty());
             box.setValue(initial);
             this.addRenderableWidget(box);
 
@@ -444,10 +537,10 @@ public class EnchantedConfigScreen extends Screen {
                                 onSave.accept(box.getValue());
                                 onClose();
                             })
-                    .bounds(this.width / 2 - 100, this.height / 2 + 26, 90, 20)
+                    .bounds(this.width / 2 - 100, this.height / 2 + 84, 90, 20)
                     .build());
             this.addRenderableWidget(Button.builder(CommonComponents.GUI_CANCEL, b -> onClose())
-                    .bounds(this.width / 2 + 10, this.height / 2 + 26, 90, 20)
+                    .bounds(this.width / 2 + 10, this.height / 2 + 84, 90, 20)
                     .build());
         }
 
@@ -458,11 +551,21 @@ public class EnchantedConfigScreen extends Screen {
         @Override
         public void render(GuiGraphics gui, int mouseX, int mouseY, float partialTick) {
             gui.fill(0, 0, this.width, this.height, 0xFF0A0D12);
-            gui.fill(this.width / 2 - 220, this.height / 2 - 74, this.width / 2 + 220, this.height / 2 + 74, 0xFF10141A);
-            gui.fill(this.width / 2 - 220, this.height / 2 - 74, this.width / 2 + 220, this.height / 2 - 73, ACCENT);
-            gui.drawCenteredString(this.font, this.title, this.width / 2, this.height / 2 - 64, LABEL);
-            gui.drawCenteredString(this.font, Component.translatable(this.tooltipKey),
-                    this.width / 2, this.height / 2 - 10, HINT);
+            gui.fill(this.width / 2 - 220, this.height / 2 - 110, this.width / 2 + 220, this.height / 2 + 112, 0xFF10141A);
+            gui.fill(this.width / 2 - 220, this.height / 2 - 110, this.width / 2 + 220, this.height / 2 - 109, ACCENT);
+            gui.drawCenteredString(this.font, this.title, this.width / 2, this.height / 2 - 100, LABEL);
+            // tooltip 分行绘制(2026-11-01,用户反馈:长 tooltip 单行居中会溢出面板被裁切)。
+            // font.split 按面板内宽换行,最多 6 行,超出以省略号截断(完整说明看主界面悬停 tooltip)。
+            List<FormattedCharSequence> tipLines =
+                    this.font.split(Component.translatable(this.tooltipKey), 400);
+            int ty = this.height / 2 - 86;
+            for (int i = 0; i < tipLines.size() && i < 6; i++) {
+                gui.drawCenteredString(this.font, tipLines.get(i), this.width / 2, ty, HINT);
+                ty += 10;
+            }
+            if (tipLines.size() > 6) {
+                gui.drawCenteredString(this.font, Component.literal("..."), this.width / 2, ty, HINT);
+            }
             super.render(gui, mouseX, mouseY, partialTick);
         }
 
@@ -471,6 +574,175 @@ public class EnchantedConfigScreen extends Screen {
             if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
                 onSave.accept(box.getValue());
                 onClose();
+                return true;
+            }
+            return super.keyPressed(keyCode, scanCode, modifiers);
+        }
+
+        @Override
+        public void onClose() {
+            this.minecraft.setScreen(parent);
+        }
+    }
+
+    // ==================== 色板选择器(2026-11-01) ====================
+
+    /**
+     * defaultColor 行的色板选择器。
+     * <p>
+     * 预设 5x5 色块网格 + 当前色预览 + RRGGBB 输入框三向同步:点击色块或输入合法
+     * hex 都会更新 current,保存时回调外层写盘。布局与 {@link LongTextEditScreen}
+     * 同款二级屏幕风格;面板高度按屏幕自适应(小 GUI 缩放下压缩不越界)。
+     */
+    private static final class ColorSwatchScreen extends Screen {
+
+        /** 网格单元尺寸(像素)。 */
+        private static final int CELL = 20;
+        /** 网格单元间距(像素)。 */
+        private static final int GAP = 4;
+        /** 网格列数。 */
+        private static final int COLS = 5;
+
+        /**
+         * 预设色板(5x5,描边常用高对比色):灰阶 / 彩虹亮色 / 彩虹深色 / 蓝紫粉 / 金属大地。
+         */
+        private static final int[] SWATCH_COLORS = {
+                0xFFFFFF, 0xBFBFBF, 0x808080, 0x404040, 0x14141A,
+                0xFF5555, 0xFFAA00, 0xFFFF55, 0x55FF55, 0x55FFFF,
+                0xAA0000, 0xAA5500, 0xAAAA00, 0x00AA00, 0x00AAAA,
+                0x5555FF, 0xAA00AA, 0xFF55FF, 0xF0F8FF, 0xFFC0CB,
+                0xFFD700, 0xB87333, 0xEDC9AF, 0x87CEEB, 0x9ACD32,
+        };
+
+        private final Screen parent;
+        private final Consumer<String> onSave;
+        /** 当前选中色(RRGGBB,无 # 前缀,大写)。 */
+        private String current;
+        private EditBox hexBox;
+
+        /**
+         * @param parent  返回目标屏幕(外层配置界面)
+         * @param initial 初始颜色(可为 #RRGGBB 或 RRGGBB;非法时回退默认粉)
+         * @param onSave  保存回调(接收 RRGGBB,外层负责写盘与缓存失效)
+         */
+        ColorSwatchScreen(Screen parent, String initial, Consumer<String> onSave) {
+            super(Component.translatable(PREFIX + ".colorSwatch.title"));
+            this.parent = parent;
+            this.onSave = onSave;
+            String t = initial == null ? "" : initial.trim();
+            if (t.startsWith("#")) {
+                t = t.substring(1);
+            }
+            this.current = Config.parseHex(t) >= 0 ? t.toUpperCase(Locale.ROOT) : "FFC0CB";
+        }
+
+        /** 面板高度(小 GUI 缩放下压缩,下限 150)。 */
+        private int panelHeight() {
+            return Math.min(216, Math.max(150, this.height - 30));
+        }
+
+        /** 面板顶 y(垂直居中)。 */
+        private int panelTop() {
+            return (this.height - panelHeight()) / 2;
+        }
+
+        /** 色块网格左上角 x(面板内水平居中)。 */
+        private int gridLeft() {
+            return this.width / 2 - (COLS * CELL + (COLS - 1) * GAP) / 2;
+        }
+
+        @Override
+        protected void init() {
+            int bottom = panelTop() + panelHeight();
+            hexBox = new EditBox(this.font, this.width / 2 - 60, bottom - 58, 120, 20, Component.empty());
+            // 颜色最长 #RRGGBB 共 7 位,限制后多余的字符无法输入
+            hexBox.setMaxLength(7);
+            hexBox.setResponder(s -> {
+                String t = s.trim();
+                if (Config.parseHex(t) >= 0) {
+                    current = (t.startsWith("#") ? t.substring(1) : t).toUpperCase(Locale.ROOT);
+                }
+            });
+            hexBox.setValue("#" + current);
+            this.addRenderableWidget(hexBox);
+
+            this.addRenderableWidget(Button.builder(
+                            Component.translatable(PREFIX + ".colorSwatch.save"), b -> save())
+                    .bounds(this.width / 2 - 100, bottom - 32, 90, 20).build());
+            this.addRenderableWidget(Button.builder(CommonComponents.GUI_CANCEL, b -> onClose())
+                    .bounds(this.width / 2 + 10, bottom - 32, 90, 20).build());
+        }
+
+        /** 保存当前颜色并返回(触发外层 markChanged 写盘)。 */
+        private void save() {
+            onSave.accept(current);
+            onClose();
+        }
+
+        @Override
+        protected void renderBlurredBackground(float partialTick) {
+        }
+
+        @Override
+        public void render(GuiGraphics gui, int mouseX, int mouseY, float partialTick) {
+            gui.fill(0, 0, this.width, this.height, 0xFF0A0D12);
+            int top = panelTop();
+            int bottom = top + panelHeight();
+            int left = this.width / 2 - 170;
+            int right = this.width / 2 + 170;
+            gui.fill(left, top, right, bottom, 0xFF10141A);
+            gui.fill(left, top, right, top + 1, ACCENT);
+            gui.drawCenteredString(this.font, this.title, this.width / 2, top + 8, LABEL);
+            gui.drawCenteredString(this.font, Component.translatable(PREFIX + ".colorSwatch.hint"),
+                    this.width / 2, top + 22, HINT);
+
+            // 色块网格(选中色白框,悬停灰框)
+            int gx = gridLeft();
+            int gy = top + 36;
+            for (int i = 0; i < SWATCH_COLORS.length; i++) {
+                int cx = gx + (i % COLS) * (CELL + GAP);
+                int cy = gy + (i / COLS) * (CELL + GAP);
+                String hex = String.format(Locale.ROOT, "%06X", SWATCH_COLORS[i]);
+                boolean selected = hex.equalsIgnoreCase(current);
+                boolean hovered = mouseX >= cx && mouseX < cx + CELL && mouseY >= cy && mouseY < cy + CELL;
+                gui.fill(cx, cy, cx + CELL, cy + CELL, 0xFF000000 | SWATCH_COLORS[i]);
+                if (selected || hovered) {
+                    gui.renderOutline(cx - 1, cy - 1, CELL + 2, CELL + 2,
+                            selected ? 0xFFFFFFFF : 0xFF8A8F98);
+                }
+            }
+
+            // 当前色预览(hexBox 左侧)
+            Integer preview = Config.parseHex(current);
+            if (preview != null) {
+                gui.fill(this.width / 2 - 100, bottom - 58, this.width / 2 - 66, bottom - 38,
+                        0xFF000000 | preview);
+                gui.renderOutline(this.width / 2 - 101, bottom - 59, 36, 22,
+                        0xFF2A2F38);
+            }
+            super.render(gui, mouseX, mouseY, partialTick);
+        }
+
+        @Override
+        public boolean mouseClicked(double mouseX, double mouseY, int button) {
+            int gx = gridLeft();
+            int gy = panelTop() + 36;
+            for (int i = 0; i < SWATCH_COLORS.length; i++) {
+                int cx = gx + (i % COLS) * (CELL + GAP);
+                int cy = gy + (i / COLS) * (CELL + GAP);
+                if (mouseX >= cx && mouseX < cx + CELL && mouseY >= cy && mouseY < cy + CELL) {
+                    current = String.format(Locale.ROOT, "%06X", SWATCH_COLORS[i]);
+                    hexBox.setValue("#" + current);
+                    return true;
+                }
+            }
+            return super.mouseClicked(mouseX, mouseY, button);
+        }
+
+        @Override
+        public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+                save();
                 return true;
             }
             return super.keyPressed(keyCode, scanCode, modifiers);

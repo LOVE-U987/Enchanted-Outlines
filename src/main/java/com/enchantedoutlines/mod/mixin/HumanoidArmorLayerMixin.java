@@ -204,4 +204,31 @@ public abstract class HumanoidArmorLayerMixin {
             OutlineRenderer.clearOutlinedItem();
         }
     }
+
+    /**
+     * 原版盔甲紫光总开关(renderGlint HEAD,2026-11-01)。
+     * <p>
+     * 盔甲的紫光<b>不经</b> ItemRenderer 的三个 foil buffer 静态中枢:
+     * vanilla {@code HumanoidArmorLayer.renderGlint} 直接
+     * {@code getBuffer(RenderType.armorEntityGlint())} 第二遍渲染模型。
+     * {@link Config#DISABLE_VANILLA_GLINT} 开启时整体取消该方法(盔甲本体已由
+     * renderArmorPiece 正常渲染,无紫光);彩色描边由本类描边注入独立绘制,不受影响。
+     * <p>
+     * 覆盖边界:GeckoLib/AzureLib 盔甲的本体渲染被各自管线接管(renderArmorPiece
+     * 被 cancel),其紫光不在本注入范围;注入目标只写方法名(无描述符),对给
+     * renderGlint 加参的上游 patch 免疫。
+     *
+     * @param pose     本体 PoseStack
+     * @param buffers  本体顶点缓冲源
+     * @param light    本体光照
+     * @param ci       注入回调(命中开关时取消原方法)
+     */
+    @SuppressWarnings("rawtypes")
+    @Inject(method = "renderGlint", at = @At("HEAD"), cancellable = true)
+    private void enchantedoutlines$noVanillaGlint(PoseStack pose, MultiBufferSource buffers, int light,
+                                                  HumanoidModel armorModel, CallbackInfo ci) {
+        if (Config.DISABLE_VANILLA_GLINT.get()) {
+            ci.cancel();
+        }
+    }
 }

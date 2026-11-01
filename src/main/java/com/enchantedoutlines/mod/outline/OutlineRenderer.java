@@ -4,14 +4,12 @@ import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.WeakHashMap;
-import java.util.concurrent.ConcurrentHashMap;
 
 import com.enchantedoutlines.mod.EnchantedOutlines;
 import com.enchantedoutlines.mod.config.Config;
@@ -59,7 +57,6 @@ import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.client.extensions.common.IClientItemExtensions;
 
 import org.joml.Matrix4f;
-import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
 /**
@@ -256,19 +253,8 @@ public final class OutlineRenderer {
      */
     private static final float PROJECTILE_INFLATE_PER_THICKNESS = 0.12f;
 
-    /** 盔甲参考半对角线(模型单位):原版胸甲 body cube(8×12×4 像素)→ √(8²+12²+4²)/2/16 ≈ 0.468。 */
-    private static final float ARMOR_REF_DIAG = 0.468f;
-
-
-    /**
-     * ⚠️ 鞘翅描边<b>与盔甲共用同一系数与参考对角线</b>(v0.1.7 修正)。
-     * <p>
-     * 此前鞘翅用独立系数 0.09 + refDiag 0.701,外扩像素 = thickness×0.5×0.09×
-     * 0.701×16 ≈ thickness×0.504 → armorThickness=8 时约 4px,是盔甲(约 1.2px)
-     * 的 3 倍多,同一配置下鞘翅明显更宽(实测反馈)。修正:鞘翅直接复用
-     * {@link #ARMOR_INFLATE_PER_THICKNESS} 与 {@link #ARMOR_REF_DIAG},均匀外扩后
-     * 两者外扩像素完全一致 —— 同一个 armorThickness 统一控制盔甲与鞘翅视觉厚度。
-     */
+    /** 盔甲参考半对角线(模型单位):原版胸甲 body cube(8×12×4 像素)→ √(8²+12²+4²)/2/16 ≈ 0.468。包内可见(Geo 盔甲路径对齐外扩量用)。 */
+    static final float ARMOR_REF_DIAG = 0.468f;
 
     /**
      * 4 个对角偏移方向(扁平描边专用,2026-10-02 统合自 Enchantment Glint Outline
@@ -332,6 +318,14 @@ public final class OutlineRenderer {
     private BakedModel tridentModel;
     /** 生成 tridentModel 时使用的 transforms(in_hand 与 throwing 不同,需跟踪重建)。 */
     private ItemTransforms tridentTransforms;
+    /**
+     * 盔甲/Geo 自定义 shader 描边 RenderType 缓存(按采样纹理 location)。
+     * <p>
+     * ⚠️ 双生产方共用本表:{@code armorOutlineRenderType}(盔甲/鞘翅/投掷物)与
+     * {@code geoOutlineRenderType}(Geo 物品)都可能以 WHITE_TEXTURE 为 key 写入,
+     * 两者 RenderType 状态一致故安全;若未来二者状态分叉,必须拆表或改缓存键,
+     * 否则后写入者会覆盖先写入者的状态(2026-11-01 审计注记)。
+     */
     private final Map<ResourceLocation, RenderType> armorRenderTypes = new HashMap<>();
 
     /** GUI/手持扁平描边的"形状纹理"RenderType 缓存(按纹理 location)。 */
@@ -342,7 +336,8 @@ public final class OutlineRenderer {
      * 生成一张 RGB=描边色、A=贴图 alpha 的动态纹理,让描边既保留物品形状又是纯描边色。
      * 纹理注册到 TextureManager(资源重载时自动销毁),本缓存随之清空重建。
      */
-    private final Map<ShapeKey, ResourceLocation> shapeTextures = new HashMap<>();
+    private final Map<ShapeKey, ResourceLocation> shapeTextures =
+            new LinkedHashMap<>(64, 0.75f, true); // accessOrder:true = LRU 语义(2026-11-01)
 
     /**
      * 序列图(mcata 动画贴图)描边采样缓存(BUG1 修复,2026-09-25):
@@ -377,8 +372,9 @@ public final class OutlineRenderer {
      */
     private final Map<BakedModel, ModelGeometry> modelGeometryCache = new WeakHashMap<>();
 
-    /** 形状纹理缓存键:物品贴图 + 描边色(RGB) + 是否压暗曝光 + 是否混物体贴图色 + 帧格索引(序列纹理帧感知,2026-10-25)。 */
-    private record ShapeKey(ResourceLocation spriteName, int color, boolean reduceExposure, boolean mix, int frame) {
+    /** 形状纹理缓存键:物品贴图 + 描边色(RGB) + 是否压暗曝光 + 是否混物体贴图色 + 帧格索引(序列纹理帧感知,2026-10-25) + alpha 二值化(2026-11-01,展示框不透明)。 */
+    private record ShapeKey(ResourceLocation spriteName, int color, boolean reduceExposure, boolean mix, int frame,
+                            boolean binaryAlpha) {
     }
 
     /**
@@ -669,6 +665,7 @@ public final class OutlineRenderer {
         this.lionfishOutline.invalidate(); // Lionfish 静态几何缓存(WeakHashMap,模型换实例自动回收)
         this.geoOutline.invalidate();      // Geo 静态几何/模型解析/盔甲检测缓存
         this.transparentTextureCache.clear();
+        SodiumCompat.invalidate();         // Sodium 精灵标记缓存(弱引用,显式清理兜底)
     }
 
     /**
@@ -712,8 +709,30 @@ public final class OutlineRenderer {
         setOutlineBlend(0.0f);
         Uniform uniform = this.outlineAlphaBoostUniform;
         if (uniform != null) {
-            uniform.set(boost);
+            uniform.set(pulseModulated(boost));
         }
+    }
+
+    /**
+     * 描边脉动调制(2026-11-01,「描边脉动」配置)。
+     * <p>
+     * {@link Config#PULSE_EFFECT} 开启时,alpha boost 乘以随时间正弦波动的系数
+     * (0.875 ± 0.125,即 0.75..1.0;周期 = 3200ms ÷ pulseSpeed)。半透明混合路径
+     * (手持/掉落物/世界 emissive/自定义 shader 半透明)呈呼吸感;<b>硬切不透明路径
+     * (物品展示框 cutout / 无光影纯色)的输出 alpha 恒为 1,乘法不改变输出</b>,
+     * 天然满足"必须看清的场景不呼吸"的语义,无需路径级判定。
+     *
+     * @param boost 原始 alpha boost(1.0 手持 / 2.0 盔甲等)
+     * @return 调制后的 boost;脉动关闭时原样返回
+     */
+    private static float pulseModulated(float boost) {
+        if (!Config.PULSE_EFFECT.get()) {
+            return boost;
+        }
+        double speed = Math.max(0.2, Config.PULSE_SPEED.get());
+        long period = (long) (3200.0 / speed);
+        double phase = (System.currentTimeMillis() % period) / (double) period * 2.0 * Math.PI;
+        return boost * (0.875f + 0.125f * (float) Math.sin(phase));
     }
 
     /**
@@ -1055,13 +1074,18 @@ public final class OutlineRenderer {
         //   - 3D 物品关混色:纯白纹理(纯描边色,形状仍由几何外扩决定,不退化);
         //   - 盾牌/三叉戟近似盒模型:全部 quads 用 stone 精灵,采样 BLOCK_SHEET 会被
         //     Iris 误判为方块材质(反射方块纹理)且 stone 灰把描边色染暗 → 恒纯白纯色。
-        // 展示框(FIXED)在光影 fallback 下也统一半透明(内置 emissive),不再硬切不透明。
+        // 展示框(FIXED,opaque=true)在光影 fallback 下的不透明实现(2026-11-01 v2):
+        // 内置 emissive 不认 OutlineCutout uniform,半透明描边在明亮场景几乎不可见。
+        // v1 曾改走原版 cutout shader 硬切变体 —— 实测 Iris 下完全不可见(弃用);
+        // v2 改为 emissive 通道 + alpha 二值化:扁平形状纹理 a>0 全顶满(binaryAlpha)、
+        // 3D 恒纯白纹理(alpha=1),translucent 混合下轮廓内完全不透明、轮廓外全透明。
+        // 手持/掉落物(opaque=false)保持 emissive 半透明发光。
         // ⚠️ 形状算法是"统一轮廓"设计(AGENTS.md #3):下方各分支只换"采样纹理"与
         // "几何算法"的既定组合,不得拆分/替换形状来源 —— 扁平=形状纹理、
         // 3D=顶点法线外扩、盔甲/鞘翅/投掷物=逐 cube 放大壳,保持 v0.1.2 语义。
         boolean fallback = needVanillaShaderFallback();
         if (fallback && !model.isGui3d() && !Config.ITEM_PIXEL_COLOR_GLINT.get()) {
-            renderFlatOutlineShape(geo, pose, color, thickness);
+            renderFlatOutlineShape(geo, pose, color, thickness, opaque);
             outlineBuffers.endBatch();
             return;
         }
@@ -1074,7 +1098,7 @@ public final class OutlineRenderer {
                 // ("根据物体颜色降低曝光");纯色路径缺这层调制 → 按物体主 sprite
                 // 平均亮度压暗描边色(色相不变,暗色物品描边更暗)。盾牌/三叉戟恒纯色
                 // → 无论混色开关如何都压暗。
-                boolean pureWhite = geo.allStone || !Config.ITEM_PIXEL_COLOR_GLINT.get()
+                boolean pureWhite = opaque || geo.allStone || !Config.ITEM_PIXEL_COLOR_GLINT.get()
                         || ColorResolver.isSolidOutline(currentOutlinedItem());
                 renderType = pureWhite
                         ? worldEmissiveOutlineRenderType(WHITE_TEXTURE)
@@ -1083,7 +1107,8 @@ public final class OutlineRenderer {
                     packedColor = darkenByLuma(packedColor, geo.luma);
                 }
             } else {
-                // 扁平物品:开混色 → BLOCK_SHEET(关混色已在上方分支处理)
+                // 扁平物品:开混色 → BLOCK_SHEET(关混色已在上方分支处理);
+                // 展示框的不透明由形状纹理 alpha 二值化(binaryAlpha)实现,通道不变。
                 renderType = worldEmissiveOutlineRenderType();
             }
         } else {
@@ -1100,7 +1125,7 @@ public final class OutlineRenderer {
             // 扁平物品(剑/工具等):8 方向平移 + 形状纹理(不依赖模型 UV)。
             // ⚠️ 旧实现 emitQuad + 模型 UV 采样 BLOCK_SHEET,模组扁平模型 UV 常为 [0,1]
             // 全图 → 采样越界 → 平面正方形(2026-08-16 事故,见 renderFlatOutlineShape)。
-            renderFlatOutlineShape(geo, pose, color, thickness);
+            renderFlatOutlineShape(geo, pose, color, thickness, opaque);
         }
         outlineBuffers.endBatch();
     }
@@ -1402,6 +1427,16 @@ public final class OutlineRenderer {
      * @param thickness 描边厚度(像素语义)
      */
     private void renderFlatOutlineShape(ModelGeometry geo, PoseStack pose, int color, float thickness) {
+        renderFlatOutlineShape(geo, pose, color, thickness, false);
+    }
+
+    /**
+     * 扁平物品描边(可指定不透明模式,2026-11-01)。
+     *
+     * @param opaque true = 展示框不透明模式:形状纹理 alpha 二值化(a>0 顶满),
+     *               emissive 半透明通道下轮廓内完全不透明;false = 半透明发光(手持/掉落物)
+     */
+    private void renderFlatOutlineShape(ModelGeometry geo, PoseStack pose, int color, float thickness, boolean opaque) {
         float t = thickness * THICKNESS_SCALE / 16.0f;
         Map<TextureAtlasSprite, List<BakedQuad>> bySprite = geo.bySprite;
         Map<TextureAtlasSprite, int[]> spriteQuadIndices = geo.spriteQuadIndices;
@@ -1433,7 +1468,7 @@ public final class OutlineRenderer {
         int vertexColor = animated ? color : 0xFFFFFFFF;
         for (Map.Entry<TextureAtlasSprite, List<BakedQuad>> entry : bySprite.entrySet()) {
             TextureAtlasSprite sprite = entry.getKey();
-            ResourceLocation tex = shapeTextureFor(sprite, animated ? 0xFFFFFFFF : color, false, mix);
+            ResourceLocation tex = shapeTextureFor(sprite, animated ? 0xFFFFFFFF : color, false, mix, opaque);
             RenderType rt = needVanillaShaderFallback()
                     ? worldEmissiveOutlineRenderType(tex)
                     : guiOutlineRenderType(tex);
@@ -1501,9 +1536,9 @@ public final class OutlineRenderer {
      *               缓存键与注册名含帧号;非序列/独立纹理路径传 0
      * @return 已注册的纹理 location
      */
-    private ResourceLocation shapeTexture(ResourceLocation source, NativeImage src, int color, boolean reduce, boolean mix, int frame) {
+    private ResourceLocation shapeTexture(ResourceLocation source, NativeImage src, int color, boolean reduce, boolean mix, int frame, boolean binaryAlpha) {
         int rgb = color & 0xFFFFFF;
-        ShapeKey key = new ShapeKey(source, rgb, reduce, mix, frame);
+        ShapeKey key = new ShapeKey(source, rgb, reduce, mix, frame, binaryAlpha);
         ResourceLocation loc = this.shapeTextures.get(key);
         if (loc == null) {
             int w = src.getWidth(), h = src.getHeight();
@@ -1523,6 +1558,14 @@ public final class OutlineRenderer {
                         // (alpha<<24)|(b<<16)|(g<<8)|r。通道顺序写错会弄乱形状/颜色。
                         int abgr = src.getPixelRGBA(x, y);
                         int a = (abgr >>> 24) & 0xFF;
+                        // alpha 二值化(2026-11-01,展示框不透明 v2):光影 fallback 的内置
+                        // emissive shader 不认 OutlineCutout,边缘渐变像素在 translucent
+                        // 混合下半透明;原版 cutout shader 变体实测在 Iris 下完全不可见。
+                        // a>0 全部顶满 255 → 轮廓内完全不透明、轮廓外 a=0 全透明,
+                        // 视觉等效硬切(与自定义 fsh 的 a>0.05 切法一致)。
+                        if (binaryAlpha && a > 0) {
+                            a = 0xFF;
+                        }
                         if (mix) {
                             // GUI 外混物体贴图色:描边 = 描边色 × 物品本体像素色。
                             // 既保留物品形状,描边色又随物品明暗,视觉上贴合本体。
@@ -1541,11 +1584,34 @@ public final class OutlineRenderer {
             loc = ResourceLocation.fromNamespaceAndPath("enchanted_outlines",
                     "shape/" + source.getNamespace() + "/"
                             + source.getPath().replace('/', '_') + "_"
-                            + Integer.toHexString(rgb) + (mix ? "_mix" : "") + "_f" + frame);
+                            + Integer.toHexString(rgb) + (mix ? "_mix" : "") + "_f" + frame
+                            + (binaryAlpha ? "_bin" : ""));
             Minecraft.getInstance().getTextureManager().register(loc, new DynamicTexture(img));
             this.shapeTextures.put(key, loc);
+            enforceShapeTextureLimit();
         }
         return loc;
+    }
+
+    /**
+     * 形状纹理 LRU 容量维持(2026-11-01,「形状纹理缓存上限」配置)。
+     * <p>
+     * shapeTextures 的键 = (源贴图, 描边色, 混色, 动画帧),多颜色/多动画物品场景下
+     * 组合数无界。缓存为 accessOrder LinkedHashMap,超限时驱逐最久未使用的条目并经
+     * TextureManager.release 注销动态纹理(不注销会泄漏显存)。仅在渲染线程 put 后
+     * 调用(单线程访问,无并发问题)。
+     */
+    private void enforceShapeTextureLimit() {
+        int limit = Config.SHAPE_TEXTURE_CACHE_LIMIT.get();
+        while (this.shapeTextures.size() > limit) {
+            Iterator<Map.Entry<ShapeKey, ResourceLocation>> it = this.shapeTextures.entrySet().iterator();
+            if (!it.hasNext()) {
+                return;
+            }
+            Map.Entry<ShapeKey, ResourceLocation> eldest = it.next();
+            it.remove();
+            Minecraft.getInstance().getTextureManager().release(eldest.getValue());
+        }
     }
 
     /**
@@ -1561,7 +1627,8 @@ public final class OutlineRenderer {
      * @param mix     true = 烘焙"描边色 × 贴图像素色"(GUI 外混物体贴图色)
      * @return 已注册的纹理 location;拿不到像素时回退纯白矩形
      */
-    private ResourceLocation shapeTextureFor(TextureAtlasSprite sprite, int color, boolean reduce, boolean mix) {
+    private ResourceLocation shapeTextureFor(TextureAtlasSprite sprite, int color, boolean reduce, boolean mix,
+                                             boolean binaryAlpha) {
         NativeImage src = spriteOriginalImage(sprite);
         if (src == null) {
             // spriteOriginalImage 反射 originalImage 失败 → 回退 WHITE_TEXTURE(1×1 不透明)
@@ -1571,7 +1638,7 @@ public final class OutlineRenderer {
         int frame = this.spriteFrameTracker.getOrDefault(sprite.contents(), 0);
         return shapeTexture(sprite.contents().name(),
                 cropToFrame(src, sprite.contents().width(), sprite.contents().height(), frame),
-                color, reduce, mix, frame);
+                color, reduce, mix, frame, binaryAlpha);
     }
 
     /**
@@ -1616,6 +1683,9 @@ public final class OutlineRenderer {
     /** 纹理读取失败节流日志时间戳(常驻诊断,非渲染缓存,不参与 invalidateCaches)。 */
     private static final Map<String, Long> TEX_READ_FAIL_LOG_THROTTLE = new HashMap<>();
 
+    /** 节流日志表容量兜底上限(键为 原因#物品/纹理,超限清空防无界增长,2026-11-01)。 */
+    static final int LOG_THROTTLE_MAX_ENTRIES = 256;
+
     /**
      * 纹理读取失败的节流诊断日志(常驻诊断,同 {@code BewlrCapture.logCaptureReject}
      * 模式:10 秒/原因#纹理 一次,info 级,低频不刷屏 —— 铁律 6 的合法例外)。
@@ -1629,6 +1699,9 @@ public final class OutlineRenderer {
     private static void logTextureReadFailure(ResourceLocation texture, String reason) {
         String key = reason + "#" + texture;
         long now = System.currentTimeMillis();
+        if (TEX_READ_FAIL_LOG_THROTTLE.size() > LOG_THROTTLE_MAX_ENTRIES) {
+            TEX_READ_FAIL_LOG_THROTTLE.clear(); // 容量兜底:仅丢"上次打印时刻",节流窗口重来
+        }
         Long last = TEX_READ_FAIL_LOG_THROTTLE.put(key, now);
         if (last != null && now - last < 10_000L) {
             return; // 10 秒窗口内同原因同纹理只打印一次
@@ -1690,20 +1763,6 @@ public final class OutlineRenderer {
         }
     }
 
-    /**
-     * 序列图描边采样统一入口(BUG1 修复,2026-09-25):mcmeta 动画纹理的 GPU 端注册对象
-     * 是<b>整张 sheet</b>(模组自管逐帧动画,如 AzureLib AzItemRenderer),描边直接采样
-     * 会画成全帧并集巨块。这里把序列图换成<b>本模组烘焙的首帧动态纹理</b>(原始 RGB 保留,
-     * 供 emissive/自定义 shader 两种 GPU 模式采样);非序列图原样返回(零开销)。
-     * <p>
-     * ⚠️ 首帧是静态近似:描边不随本体帧动画(烘焙纹理不轮帧)。帧间轮廓相近的武器
-     * (动画多为发光/特效变化)视觉可接受;比整张 sheet 巨块正确得多。
-     * <p>
-     * 缓存经 {@link #invalidateCaches} 清理(TextureManager 重载后动态纹理失效)。
-     *
-     * @param texture 原纹理 location
-     * @return 非序列图 = 原样;序列图 = 已注册的首帧烘焙纹理 location
-     */
     /**
      * 序列图描边采样统一入口(BUG1 修复,2026-09-26 修订为"按活性分流")。
      * <p>
@@ -1854,7 +1913,7 @@ public final class OutlineRenderer {
     private ResourceLocation shapeTextureForLocation(ResourceLocation texture, int color) {
         int rgb = color & 0xFFFFFF;
         boolean reduce = Config.OUTLINE_EXPOSURE_REDUCE.get();
-        ShapeKey key = new ShapeKey(texture, rgb, reduce, false, 0);
+        ShapeKey key = new ShapeKey(texture, rgb, reduce, false, 0, false);
         ResourceLocation cached = this.shapeTextures.get(key);
         if (cached != null) {
             return cached; // 已生成过:直接复用,不再读 PNG
@@ -1885,7 +1944,7 @@ public final class OutlineRenderer {
                         src.setPixelRGBA(x, y, (a << 24) | (b << 16) | (g << 8) | r);
                     }
                 }
-                ResourceLocation loc = shapeTexture(texture, src, color, reduce, false, 0);
+                ResourceLocation loc = shapeTexture(texture, src, color, reduce, false, 0, false);
                 src.close();
                 return loc;
             }
@@ -2261,6 +2320,16 @@ public final class OutlineRenderer {
         return taczGunOutline;
     }
 
+    /**
+     * BEWLR 手持物品 3D 描边放大系数(每厚度增量),读配置 {@link Config#BEWLR_3D_SCALE}
+     * (默认 0.1,玩家可调)。
+     * <p>
+     * 3D 描边是几何放大壳(scale = 1 + thickness×0.5×系数),外扩量 =
+     * (scale-1)×点到中心距离 → 细长武器多数面离中心近、外扩小,需要比扁平物品
+     * (像素偏移)更大的基础系数。旧硬编码 0.12 太弱,后改为配置读取。
+     *
+     * @return 每厚度放大增量(配置值)
+     */
     static float bewlrInflatePerThickness() {
         return Config.BEWLR_3D_SCALE.get().floatValue();
     }

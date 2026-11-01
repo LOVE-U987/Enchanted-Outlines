@@ -13,7 +13,6 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 
 import net.minecraft.client.model.HumanoidModel;
 import net.minecraft.client.renderer.texture.OverlayTexture;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
@@ -691,7 +690,13 @@ final class GeoOutline {
         }
         this.renderer.setOutlineAlphaBoost(2.0f);
         int packedColor = 0xFF000000 | (color & 0xFFFFFF);
-        float offset = thickness * OutlineRenderer.THICKNESS_SCALE * OutlineRenderer.ARMOR_INFLATE_PER_THICKNESS;
+        // ⚠️ 外扩量与原版盔甲路径对齐(2026-11-01,用户实测"原版细、模组粗"):
+        // 原版路径是绕部件中心放大壳 + uniform 自适应,有效外扩 = (scale-1)×refDiag =
+        // thickness×THICKNESS_SCALE×ARMOR_INFLATE×ARMOR_REF_DIAG;本路径的顶点法线外扩
+        // 原来直接用全量 offset(缺 refDiag 因子)→ 视觉环宽是原版的 1/0.468 ≈ 2.14 倍。
+        // 乘 ARMOR_REF_DIAG 对齐;法线外扩恒定即为均匀外扩语义,不依赖 ARMOR_UNIFORM_EXPAND。
+        float offset = thickness * OutlineRenderer.THICKNESS_SCALE
+                * OutlineRenderer.ARMOR_INFLATE_PER_THICKNESS * OutlineRenderer.ARMOR_REF_DIAG;
         // ⚠️ 纯采样贴图(2026-08-16):全部 cube 采样本体纹理(纹理轮廓),贴图有内容的
         // 部件描边(sigil 符号等),贴图全透明的部件(光环)无描边。
         ResourceLocation texture = azureLibArmorTexture(renderer, entity, stack);
@@ -938,7 +943,13 @@ final class GeoOutline {
         }
         this.renderer.setOutlineAlphaBoost(2.0f);
         int packedColor = 0xFF000000 | (color & 0xFFFFFF);
-        float offset = thickness * OutlineRenderer.THICKNESS_SCALE * OutlineRenderer.ARMOR_INFLATE_PER_THICKNESS;
+        // ⚠️ 外扩量与原版盔甲路径对齐(2026-11-01,用户实测"原版细、模组粗"):
+        // 原版路径是绕部件中心放大壳 + uniform 自适应,有效外扩 = (scale-1)×refDiag =
+        // thickness×THICKNESS_SCALE×ARMOR_INFLATE×ARMOR_REF_DIAG;本路径的顶点法线外扩
+        // 原来直接用全量 offset(缺 refDiag 因子)→ 视觉环宽是原版的 1/0.468 ≈ 2.14 倍。
+        // 乘 ARMOR_REF_DIAG 对齐;法线外扩恒定即为均匀外扩语义,不依赖 ARMOR_UNIFORM_EXPAND。
+        float offset = thickness * OutlineRenderer.THICKNESS_SCALE
+                * OutlineRenderer.ARMOR_INFLATE_PER_THICKNESS * OutlineRenderer.ARMOR_REF_DIAG;
         // ⚠️ 纯采样贴图(2026-08-16):全部 cube 采样本体纹理(纹理轮廓),贴图透明部件无描边
         VertexConsumer consumer = this.renderer.outlineBuffers
                 .getBuffer(this.renderer.armorOutlineRenderType(texture, color));

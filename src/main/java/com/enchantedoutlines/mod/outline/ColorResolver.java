@@ -259,7 +259,43 @@ public final class ColorResolver {
         }
         Map<ResourceLocation, Integer> map = Config.enchantColorMap();
         Integer c = map.get(id);
-        return c != null ? c : fallback;
+        if (c != null) {
+            return c;
+        }
+        // 稀有度自动取色(2026-11-01):未在 enchantColors 配置的附魔按 weight 映射
+        // 稀有度取 rarityColors;-1(该稀有度未配置/非法)回退默认色。
+        if (Config.ENCHANT_RARITY_AUTO_COLOR.get()) {
+            int rarity = Config.rarityColorArgb(rarityIndex(holder));
+            if (rarity != -1) {
+                return rarity;
+            }
+        }
+        return fallback;
+    }
+
+    /**
+     * 附魔稀有度索引(2026-11-01,weight 越小越稀有)。
+     * <p>
+     * 1.21.1 的 Enchantment 数据驱动化后无独立 Rarity 字段,
+     * {@code definition().weight()} 即原版 JSON 的 {@code weight}(常见度权重,
+     * 值越大越常见)。映射与附魔稀有度直觉对齐:锋利/保护(10)= common,
+     * 时运/精准采集(2)= rare,无穷/引雷(1)= epic。
+     *
+     * @param holder 附魔 holder
+     * @return 稀有度索引(0=common,1=uncommon,2=rare,3=epic)
+     */
+    private static int rarityIndex(Holder<Enchantment> holder) {
+        int weight = holder.value().definition().weight();
+        if (weight <= 1) {
+            return 3; // EPIC
+        }
+        if (weight == 2) {
+            return 2; // RARE
+        }
+        if (weight <= 4) {
+            return 1; // UNCOMMON
+        }
+        return 0; // COMMON
     }
 
     private static ResourceLocation itemId(ItemStack stack) {

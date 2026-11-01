@@ -1,6 +1,7 @@
 package com.enchantedoutlines.mod.config;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -46,6 +47,20 @@ public final class Config {
             .comment("Outline thickness for worn armor in pixels beyond the model (0-8, decimal allowed).",
                     "盔甲描边超出模型的像素数，支持小数，0 关闭盔甲描边扩张。")
             .defineInRange("armorThickness", 8.0, 0.0, 20.0);
+
+    /** 展示框 (物品展示框/FIXED) 描边厚度 (名义像素);-1 = 跟随全局 thickness。 */
+    public static final ModConfigSpec.DoubleValue ITEM_FRAME_THICKNESS = BUILDER
+            .comment("Outline thickness for items in item frames (-1 = follow global thickness).",
+                    "展示框 (物品展示框) 内物品的描边厚度,支持小数:",
+                    "-1 = 跟随全局 thickness (默认);>=0 时覆盖全局值 (背景物体常需要更粗的描边)。")
+            .defineInRange("itemFrameThickness", -1.0, -1.0, 8.0);
+
+    /** 掉落物 (GROUND) 描边厚度 (名义像素);-1 = 跟随全局 thickness。 */
+    public static final ModConfigSpec.DoubleValue GROUND_THICKNESS = BUILDER
+            .comment("Outline thickness for dropped items (-1 = follow global thickness).",
+                    "掉落物 (GROUND) 的描边厚度,支持小数:",
+                    "-1 = 跟随全局 thickness (默认);>=0 时覆盖全局值。")
+            .defineInRange("groundThickness", -1.0, -1.0, 8.0);
 
     /** 多附魔取色模式 */
     public static final ModConfigSpec.ConfigValue<String> MERGE_MODE = BUILDER
@@ -101,6 +116,21 @@ public final class Config {
                     "true = 纯色描边按物品贴图平均亮度压暗 (暗色物品的描边显著变暗，亮色物品基本不变),色相不变;",
                     "false = 纯色描边保持原始亮度。")
             .define("outlineExposureReduce", true);
+
+    /**
+     * 关闭原版附魔紫光但保留彩色描边 (默认 false)。
+     * <p>
+     * 开启后拦截 {@code ItemRenderer} 的三个 foil/glint buffer 静态中枢
+     * (getFoilBuffer / getFoilBufferDirect / getArmorFoilBuffer),覆盖物品、盾牌、
+     * 三叉戟、BEWLR、鞘翅、盔甲的全部紫光路径;描边由本模组独立绘制,不受影响。
+     */
+    public static final ModConfigSpec.BooleanValue DISABLE_VANILLA_GLINT = BUILDER
+            .comment("Disable the vanilla enchantment glint while keeping colored outlines (default false).",
+                    "关闭原版附魔紫光 (默认 false):",
+                    "true = 物品/盾牌/三叉戟/盔甲/鞘翅不再渲染原版紫色附魔光效,彩色描边不受影响;",
+                    "false = 保持原版行为。",
+                    "注意:关闭紫光后若同时关闭描边,附魔将没有任何视觉提示。")
+            .define("disableVanillaGlint", false);
 
     // ==================== BEWLR 3D 物品描边 ====================
 
@@ -239,6 +269,33 @@ public final class Config {
                     "false = 使用正常颜色配置。")
             .define("enableRPGRainbow", false);
 
+    // ==================== 描边脉动 ====================
+
+    /** 是否启用描边呼吸脉动 (默认 false)。硬切不透明路径 (展示框/盔甲 cutout) 不参与。 */
+    public static final ModConfigSpec.BooleanValue PULSE_EFFECT = BUILDER
+            .comment("Enable pulsing (breathing) outline effect (default false).",
+                    "描边呼吸脉动 (默认 false):",
+                    "true = 描边透明度随时间轻微波动 (速度由 pulseSpeed 控制),呈呼吸效果;",
+                    "false = 描边透明度恒定。",
+                    "注意:硬切不透明路径 (物品展示框/盔甲 cutout) 为保证可读性不参与脉动。")
+            .define("pulseEffect", false);
+
+    /** 脉动速度倍率 (默认 1.0,范围 0.2-3.0)。 */
+    public static final ModConfigSpec.DoubleValue PULSE_SPEED = BUILDER
+            .comment("Pulse speed multiplier (default 1.0).",
+                    "脉动速度倍率:0.2-3.0,越大呼吸越快;1.0 为基准周期。")
+            .defineInRange("pulseSpeed", 1.0, 0.2, 3.0);
+
+    // ==================== 性能 ====================
+
+    /** 形状纹理缓存上限 (LRU 驱逐,默认 256)。 */
+    public static final ModConfigSpec.IntValue SHAPE_TEXTURE_CACHE_LIMIT = BUILDER
+            .comment("Max shape-texture cache entries with LRU eviction (default 256).",
+                    "形状纹理缓存上限 (LRU 驱逐,默认 256):",
+                    "缓存键 = 贴图 x 描边色 x 混色模式 x 动画帧,颜色/动画组合多时可能膨胀;",
+                    "超限后最久未使用的条目被驱逐并注销纹理;32-2048 之间调节。")
+            .defineInRange("shapeTextureCacheLimit", 256, 32, 2048);
+
     // ==================== 颜色 ====================
 
     /** 默认描边色 */
@@ -257,6 +314,22 @@ public final class Config {
                             + "minecraft:protection=87CEEB,minecraft:unbreaking=9ACD32,"
                             + "minecraft:mending=9FE2BF,minecraft:fortune=FFD700,"
                             + "minecraft:looting=FFB6C1,minecraft:smite=FFE4B5");
+
+    /** 是否为未在 enchantColors 配置的附魔按稀有度自动取色 (默认 false)。 */
+    public static final ModConfigSpec.BooleanValue ENCHANT_RARITY_AUTO_COLOR = BUILDER
+            .comment("Auto-assign outline colors by enchantment rarity (default false).",
+                    "稀有度自动取色 (默认 false):",
+                    "true = 未在 enchantColors 中配置的附魔按稀有度取 rarityColors 中的颜色",
+                    "(取色链:逐物品 > 逐附魔 > 稀有度 > 默认);",
+                    "false = 未配置的附魔一律使用默认颜色。")
+            .define("enchantRarityAutoColor", false);
+
+    /** 稀有度颜色 (common,uncommon,rare,epic 逗号分隔;缺省沿用原版稀有度名色)。 */
+    public static final ModConfigSpec.ConfigValue<String> RARITY_COLORS = BUILDER
+            .comment("Rarity colors as RRGGBB, comma separated: common,uncommon,rare,epic.",
+                    "稀有度颜色:common,uncommon,rare,epic 依次逗号分隔 RRGGBB;",
+                    "缺省沿用原版物品名称稀有度色 (白/黄/青/粉);不足四色时缺失项回退默认描边色。")
+            .define("rarityColors", "FFFFFF,FFFF55,55FFFF,FF55FF");
 
     /** 逐物品颜色映射 (覆盖附魔取色，含模组物品) */
     public static final ModConfigSpec.ConfigValue<String> ITEM_COLORS = BUILDER
@@ -322,6 +395,7 @@ public final class Config {
     private static volatile List<Pattern> cachedDisabledPatterns = null;
     private static volatile List<Pattern> cachedSolidPatterns = null;
     private static volatile Map<String, String> cachedNamespaceAdapters = null;
+    private static volatile int[] cachedRarityColors = null;
 
     private Config() {
     }
@@ -336,6 +410,7 @@ public final class Config {
         cachedDisabledPatterns = null;
         cachedSolidPatterns = null;
         cachedNamespaceAdapters = null;
+        cachedRarityColors = null;
     }
 
     /** 默认描边色 (ARGB，完全不透明)。非法值时退回青绿色。 */
@@ -458,6 +533,43 @@ public final class Config {
 
     public static boolean isHighestMerge() {
         return "highest".equalsIgnoreCase(MERGE_MODE.get());
+    }
+
+    /**
+     * 稀有度颜色(0=common,1=uncommon,2=rare,3=epic),取自 rarityColors 配置。
+     *
+     * @param index 稀有度索引
+     * @return ARGB(含不透明 alpha);索引越界或该稀有度未配置/非法时返回 -1
+     */
+    public static int rarityColorArgb(int index) {
+        int[] colors = cachedRarityColors;
+        if (colors == null) {
+            colors = parseRarityColors(RARITY_COLORS.get());
+            cachedRarityColors = colors;
+        }
+        return (index >= 0 && index < colors.length) ? colors[index] : -1;
+    }
+
+    /**
+     * 解析 common,uncommon,rare,epic 逗号分隔四色(RRGGBB,容错 # 前缀与 3 位简写)。
+     *
+     * @param raw 配置原文
+     * @return 长度 4 的 ARGB 数组,非法/缺失条目为 -1
+     */
+    private static int[] parseRarityColors(String raw) {
+        int[] colors = new int[4];
+        Arrays.fill(colors, -1);
+        if (raw == null) {
+            return colors;
+        }
+        String[] parts = raw.split(",");
+        for (int i = 0; i < 4 && i < parts.length; i++) {
+            int rgb = parseHex(parts[i].trim());
+            if (rgb >= 0) {
+                colors[i] = 0xFF000000 | rgb;
+            }
+        }
+        return colors;
     }
 
     // ==================== 解析 ====================

@@ -2,6 +2,86 @@
 
 ---
 
+## v0.3.0
+
+### 修复:模组盔甲描边比原版厚(2026-11-01,实机反馈)
+
+- 根因:GeckoLib/AzureLib 盔甲走顶点法线外扩,外扩量直接用了全量 offset
+  (`thickness×THICKNESS_SCALE×ARMOR_INFLATE`);原版盔甲路径是"绕部件中心放大壳
+  + 均匀自适应",有效外扩还要乘参考半对角线 `ARMOR_REF_DIAG`(0.468)—— 模组
+  盔甲的视觉环宽因此是原版的约 2.14 倍。
+- 修复:Geo 盔甲路径外扩量乘 `ARMOR_REF_DIAG` 对齐原版视觉;`ARMOR_REF_DIAG`
+  改包内可见(Geo 子模块对齐用)。法线外扩恒定即为均匀外扩语义,不依赖
+  `armorUniformExpand` 开关。
+
+### 修复:长文本编辑屏(2026-11-01,实机反馈)
+
+- 长文本配置(命名空间适配器等)二级编辑屏的 tooltip 原为单行居中绘制,过长时
+  溢出面板被裁切;改为 font.split 按面板宽度分行,最多 6 行,超出省略号截断。
+- 编辑框由单行 EditBox 升级为 MultiLineEditBox(自带纵向滚动条、无 maxLength
+  截断),长配置可纵向滚动查看与编辑。
+
+### 修复:ThreadLocal 标记异常滞留(2026-11-01)
+
+- `GuiGraphicsMixin`/`ItemInHandRendererMixin` 的 IN_GUI_RENDER / 手持标记原由
+  RETURN 注入恢复:目标方法体异常时 RETURN 不执行,标记永久滞留(开光影用户的世界
+  描边整体失效)。改用 MixinExtras `@WrapOperation` 包住本体渲染调用,finally 恢复
+  对异常路径全覆盖;HEAD 注入补空物品早退(避免空物品时标记无人恢复)。
+
+### 质量:缓存登记与节流上限(2026-11-01)
+
+- 三叉戟 mixin 的 cachedTridentRoot 改自校验(记录 EntityModelSet 归属,资源重载自动重烘);
+- SodiumCompat.MODEL_SPRITES 接入 invalidateCaches 失效链;
+- 两个节流日志表(纹理读取失败/捕获守卫)加 256 条容量兜底。
+
+### 质量:注释残留与死代码清理(2026-11-01)
+
+- OutlineRenderer:3 处孤儿 javadoc 删除(BEWLR_3D_SCALE "默认 0.3" 矛盾注释修正为
+  0.1 并归位方法、鞘翅系数历史注释、序列图旧版双 javadoc);4 个死 import;
+- armorRenderTypes 双生产方(WHITE key 共写)补审计注记;
+- GeoOutline 死 import;配置界面 CategoryButton 死参数。
+
+### 新增:关闭原版紫光保留描边(2026-11-01)
+
+- 新配置 `disableVanillaGlint`(默认 false):开启后拦截 ItemRenderer 三个 foil
+  buffer 静态中枢(getFoilBuffer/getFoilBufferDirect/getArmorFoilBuffer,覆盖物品/
+  盾牌/三叉戟/BEWLR/投掷物/鞘翅)+ HumanoidArmorLayer.renderGlint HEAD 取消
+  (盔甲紫光不经中枢)。新 mixin `ItemRendererFoilMixin`。只影响视觉,附魔逻辑不变。
+
+### 新增:稀有度自动取色(2026-11-01)
+
+- 新配置 `enchantRarityAutoColor`(默认 false)+ `rarityColors`(common,uncommon,
+  rare,epic 四色,默认沿用原版稀有度名色)。取色链:逐物品 > 逐附魔 > 稀有度 > 默认;
+  附魔稀有度按 definition().weight() 映射(<=1 史诗 / 2 稀有 / 3-4 非凡 / >=5 常见)。
+
+### 新增:展示框/掉落物独立厚度(2026-11-01)
+
+- 新配置 `itemFrameThickness` / `groundThickness`(默认 -1 跟随全局,>=0 覆盖)。
+
+### 新增:描边呼吸脉动(2026-11-01)
+
+- 新配置 `pulseEffect`(默认 false)+ `pulseSpeed`(0.2-3.0)。走 OutlineAlphaBoost
+  uniform 乘法调制(0.75..1.0 正弦);硬切不透明路径输出 alpha 恒 1,天然不呼吸。
+
+### 新增:形状纹理缓存 LRU 上限(2026-11-01)
+
+- 新配置 `shapeTextureCacheLimit`(32-2048,默认 256):shapeTextures 改 accessOrder
+  LinkedHashMap,超限驱逐最久未用条目并 TextureManager.release 注销,防显存泄漏。
+
+### 新增:配置界面重排 + 颜色选择器(2026-11-01)
+
+- 4 分类 → 6 分类(通用/颜色与取色/逐物品规则/光影兼容/模组兼容/高级),实验性
+  分类删除,RPG 虹灯转正;多附魔取色移入颜色分类;
+- defaultColor 行新增色块入口 + ColorSwatchScreen 色板选择器(25 预设色网格 +
+  hex 输入 + 预览三向同步);新增整数输入行类型。
+
+### 工具:VERIFY 新增铁律 6.9 检查(2026-11-01)
+
+- 新检查「描边厚度语义一致」:thickness 与裸数字字面量相乘即 error(厚度系数必须
+  走具名常量/配置;历史事故:鞘翅独立系数 0.09)。verify_selftest 已加注入用例。
+
+---
+
 ## v0.2.2
 
 ### 重构:TACZ 兼容算法推倒重做 —— TaCZ 内部注入走查(2026-10-18)

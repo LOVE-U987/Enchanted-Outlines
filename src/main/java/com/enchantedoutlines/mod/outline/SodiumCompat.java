@@ -187,4 +187,15 @@ public final class SodiumCompat {
         lastDiagLogMs = now;
         EnchantedOutlines.LOGGER.info("[Enchanted Outlines] Sodium 动画兼容不可用({}): 如遇附魔物品动画冻结,请关闭 Sodium 的\"仅动画可见纹理\"", detail);
     }
+
+    /**
+     * 清空模型精灵缓存(供 {@code OutlineRenderer.invalidateCaches} 在资源重载/进出世界时调用)。
+     * <p>
+     * MODEL_SPRITES 是 WeakHashMap(key 弱引用,模型实例随资源重载自然回收),此处显式
+     * 清理是缓存登记纪律(AGENTS.md 渲染缓存铁律)的兜底:重载后立即释放旧列表,
+     * 不依赖 GC 时机。
+     */
+    public static void invalidate() {
+        MODEL_SPRITES.clear();
+    }
 }
