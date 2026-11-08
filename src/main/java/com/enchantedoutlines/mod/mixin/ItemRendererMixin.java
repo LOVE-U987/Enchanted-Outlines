@@ -3,6 +3,7 @@ package com.enchantedoutlines.mod.mixin;
 import com.enchantedoutlines.mod.config.Config;
 import com.enchantedoutlines.mod.outline.ColorResolver;
 import com.enchantedoutlines.mod.outline.OutlineRenderer;
+import com.enchantedoutlines.mod.outline.PlatformCompat;
 import com.enchantedoutlines.mod.outline.SodiumCompat;
 
 import net.minecraft.client.Minecraft;
@@ -89,6 +90,17 @@ public abstract class ItemRendererMixin {
                 || context == ItemDisplayContext.GROUND
                 || context == ItemDisplayContext.FIXED;
         boolean bewlrHandheld = false; // 手持 BEWLR 物品：本体 = BEWLR 自定义实体模型
+
+        // 平台全自定义渲染物品(2026-11-08, issue #4):本体 render 被平台 cancel 后全自绘,
+        // 占位模型没有实际几何 → 平面描边必然错位,直接跳过(宁可无描边,不画错位描边)。
+        if (PlatformCompat.hasDynamicRenderer(stack)) {
+            return;
+        }
+        // 平台渲染期模型替换探测(2026-11-08, issue #4):与本体 ItemRenderer.render 的
+        // @ModifyVariable 同源解析 —— GROUND/FIXED 平台恒 pass(无变化);PlayerAnimator
+        // 直连手持路径(不经 ItemInHandRenderer)则得到与本体一致的替换模型(如矛的
+        // in_hand 模型)。幂等:重复探测与本体结果一致。
+        model = PlatformCompat.resolveRenderModel(stack, context, model);
 
         // 盾牌/三叉戟是 BEWLR(占位模型无形状),用近似盒模型描边;其余 BEWLR 物品跳过。
         // 三叉戟:

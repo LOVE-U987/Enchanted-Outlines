@@ -284,6 +284,23 @@
 - 捕获描边本身已在 `renderBewlrCapturedOutline` 用<b>顶点法线平均外扩</b>(与
   `prepareExpand/renderVertexNormalExpand` 同构):共享顶点沿相邻面法线均匀外扩、
   形状贴合、端部不鼓,替代旧 AABB 中心放大壳(端部膨胀/易错位)。
+- **渲染期模型替换铁律(v0.3.1 未发布,2026-11-08,issue #4)**:平台/模组可能在
+  `ItemRenderer.render`(8 参)的 `@ModifyVariable` 里按 display context 替换本体模型
+  (实测:Blackgear Platform 的 `ItemRendererRegistry` —— `renderFirstPerson` 对手持
+  context 提交 `<材质>_spear_in_hand` 模型),而 `getModel` 上的替换 hook 只咨询
+  `renderThirdPerson`(恒 pass) → <b>只经 `getModel` 解析的描边拿到 GUI 平面模型</b>,
+  描边 = GUI 剪影套手持本体(issue #4:Vanilla Backport 矛,曾被误判为"高分辨率
+  贴图缩放错误")。规则:
+  - 描边模型解析必须<b>镜像本体 render 期的最终模型</b>:三个入口(GUI/手持/
+    GROUND+FIXED)统一调用同一解析入口(参考 `outline/PlatformCompat.resolveRenderModel`),
+    按 context 探测各替换机制;只经公开注册表反射镜像、禁止复制内部逻辑、失败即回退;
+  - 本体为全自绘型(`DynamicItemRenderer`/cancel 后自绘)时跳过描边(宁可无描边,
+    不画错位描边,与铁律 6.9 同源);
+  - 排查方法论:分别记录描边入口解析的模型与本体 render 8 参 HEAD 的 `model` 参数,
+    <b>不等即模型不一致(适用本条)</b>;相等再查 UV/形状纹理/display 变换;
+  - 新增同类兼容时以<b>运行时 jar 反编译</b>核对 hook 语义 —— 目标模组源码分支
+    可能对应其它 MC 版本(Platform main 分支 = 1.20.1 旧架构,与 1.21.1 jar 完全不同),
+    按源码推理会得出错误结论。
 - 原则:本体怎么渲染,描边就怎么渲染 —— 一切自定义渲染(模型替换/纹理替换)必须
   走与本体相同的 hook/解析路径,不得硬编码原版假设。
 

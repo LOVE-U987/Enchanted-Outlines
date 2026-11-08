@@ -3,6 +3,7 @@ package com.enchantedoutlines.mod.mixin;
 import com.enchantedoutlines.mod.config.Config;
 import com.enchantedoutlines.mod.outline.ColorResolver;
 import com.enchantedoutlines.mod.outline.OutlineRenderer;
+import com.enchantedoutlines.mod.outline.PlatformCompat;
 import com.enchantedoutlines.mod.outline.SodiumCompat;
 
 import net.minecraft.client.Minecraft;
@@ -92,6 +93,15 @@ public abstract class GuiGraphicsMixin {
         }
         ItemRenderer itemRenderer = Minecraft.getInstance().getItemRenderer();
         BakedModel model = itemRenderer.getModel(stack, level, entity, seed);
+        // 平台全自定义渲染物品(2026-11-08, issue #4):GUI 本体同样由平台 cancel 后自绘,
+        // 占位模型无几何意义 → 跳过描边(宁可无描边,不画错位描边)。
+        if (PlatformCompat.hasDynamicRenderer(stack)) {
+            return;
+        }
+        // 平台渲染期模型替换探测(2026-11-08, issue #4):镜像本体 ItemRenderer.render 的
+        // @ModifyVariable 解析 —— GUI 下平台通常 pass(无变化);若有模组对 GUI 提交专用
+        // 模型,描边与本体保持一致。
+        model = PlatformCompat.resolveRenderModel(stack, ItemDisplayContext.GUI, model);
         float thickness = ColorResolver.thickness(stack);
         if (thickness <= 0f) {
             return;

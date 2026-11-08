@@ -988,6 +988,26 @@ public final class OutlineRenderer {
      */
     private void renderVertexNormalExpand(ModelGeometry geo, PoseStack pose, VertexConsumer consumer,
                                           int packedColor, float offset) {
+        renderVertexNormalExpand(geo, pose, consumer, packedColor, offset, null);
+    }
+
+    /**
+     * 顶点法线平均外扩(按 quad 索引子集发射)。
+     * <p>
+     * 供光影 fallback 的"逐 sprite 形状纹理"路径使用:同一模型的不同 sprite 需要绑定
+     * 不同的采样纹理(纹理在 RenderType 级),故按 {@link ModelGeometry#spriteQuadIndices}
+     * 分组发射。几何算法与全量版本完全一致,仅限定参与发射的 quad 范围。
+     *
+     * @param geo         模型几何缓存(含外扩预处理)
+     * @param pose        已居中的 PoseStack
+     * @param consumer    顶点写入目标(该 sprite 对应的 RenderType 缓冲)
+     * @param packedColor 描边色(ABGR 打包)
+     * @param offset      外扩距离(模型单位)
+     * @param quadIndices 参与发射的 quad 索引(按 {@link ModelGeometry#quads} 顺序);
+     *                    null = 全部 quad
+     */
+    private void renderVertexNormalExpand(ModelGeometry geo, PoseStack pose, VertexConsumer consumer,
+                                          int packedColor, float offset, int[] quadIndices) {
         Matrix4f poseMatrix = pose.last().pose();
         Vector3f tmp = new Vector3f(); // 复用,避免每顶点分配
         // ε 推挤(见 NORMAL_EPSILON):正常外扩之外额外沿法线推 1e-4,描边面与本体
@@ -995,7 +1015,9 @@ public final class OutlineRenderer {
         float off = offset + NORMAL_EPSILON;
         List<ExpandVertex[]> quadVertices = geo.expandVertices;
         List<Vec3i> quadNormals = geo.expandNormals;
-        for (int qi = 0; qi < quadVertices.size(); qi++) {
+        int count = quadIndices == null ? quadVertices.size() : quadIndices.length;
+        for (int k = 0; k < count; k++) {
+            int qi = quadIndices == null ? k : quadIndices[k];
             Vec3i n = quadNormals.get(qi);
             for (ExpandVertex v : quadVertices.get(qi)) {
                 Vector3f p = poseMatrix.transformPosition(
@@ -1089,6 +1111,25 @@ public final class OutlineRenderer {
             outlineBuffers.endBatch();
             return;
         }
+        float offset = thickness * THICKNESS_SCALE * HAND_INFLATE_PER_THICKNESS;
+        if (fallback && model.isGui3d()) {
+            // 纯白纯色路径(2026-11-08 修复):原实现整模型绑定 1×1 不透明 WHITE 纹理,
+            // 形状完全依赖几何外扩。但零厚度贴片(十字/平面模型,如杜鹃花、树苗)的
+            // 正反面法线相反,按位置聚合后法线和为零 → 外扩量为零 → 描边 quad 与本体
+            // quad 完全同位;本体贴图透明处(杜鹃花下部的稀疏茎干区)会把这张实心
+            // 矩形直接透出来 → "下部方形"。改为逐 sprite 绑定形状纹理(烘白 rgb +
+            // 源贴图 alpha 遮罩,颜色走顶点色),透明处 alpha=0 不再画出实心块,与无光影
+            // 路径(handOutlineRenderType 采样 BLOCK_SHEET 自带物品 alpha)观感一致。
+            // ⚠️ 几何算法不变(仍是顶点法线外扩,铁律 3):实心物品贴图 alpha 恒满 →
+            // 输出与旧的纯白纹理完全一致;仅消除"贴图透明区被实心描边填满"的伪影。
+            boolean pureWhite = opaque || geo.allStone || !Config.ITEM_PIXEL_COLOR_GLINT.get()
+                    || ColorResolver.isSolidOutline(currentOutlinedItem());
+            if (pureWhite && !geo.allStone) {
+                renderWorld3dShapeMasked(geo, pose, packedColor, offset, opaque);
+                outlineBuffers.endBatch();
+                return;
+            }
+        }
         RenderType renderType;
         if (fallback) {
             if (model.isGui3d()) {
@@ -1115,7 +1156,6 @@ public final class OutlineRenderer {
             renderType = handOutlineRenderType();
         }
         VertexConsumer consumer = outlineBuffers.getBuffer(renderType);
-        float offset = thickness * THICKNESS_SCALE * HAND_INFLATE_PER_THICKNESS;
         if (model.isGui3d()) {
             // 立体物品(三叉戟/盾牌/方块等):顶点法线平均外扩 —— 每个顶点沿相邻面
             // 法线平均值方向移动固定距离,描边贴合表面、厚度均匀。不依赖几何中心,
@@ -1128,6 +1168,60 @@ public final class OutlineRenderer {
             renderFlatOutlineShape(geo, pose, color, thickness, opaque);
         }
         outlineBuffers.endBatch();
+    }
+
+    /**
+     * 光影 fallback 下 3D 物品的"纯白纯色"描边:逐 sprite 形状纹理(烘白 + 顶点色)。
+     * <p>
+     * 背景(2026-11-08 修复):旧实现整模型绑定 {@link #WHITE_TEXTURE}(1×1 不透明),
+     * 形状完全依赖几何外扩。零厚度贴片模型(十字/平面:杜鹃花、树苗等)正反面法线相反,
+     * 聚合后为零 → 不外扩 → 描边 quad 与本体同位,本体贴图透明处透出实心矩形
+     * ("下部方形")。改为每个 sprite 绑定一张<b>烘白 rgb + 源贴图 alpha</b> 的形状纹理,
+     * 颜色经顶点色传入(内置 emissive 输出 {@code 白texel × vertexColor} = 纯描边色,
+     * 与烘焙色数学等价);透明区域 alpha=0,不再画出实心块。
+     * <p>
+     * 几何算法保持顶点法线外扩不变(铁律 3):实心物品贴图 alpha 恒满 → 输出与旧纯白
+     * 完全一致;仅消除"贴图透明区被实心描边填满"的伪影。
+     * <p>
+     * 渲染顺序:每个 sprite 的顶点各写各的批,所有批都<b>先于本体</b>绘制(COLOR_WRITE
+     * 不写深度,本体随后覆盖中心),与全量路径语义一致。
+     *
+     * @param geo         模型几何缓存(需含 bySprite / spriteQuadIndices 分组)
+     * @param pose        已居中的 PoseStack
+     * @param packedColor 描边色(ABGR,尚未按亮度压暗)
+     * @param offset      外扩距离(模型单位)
+     * @param opaque      true = 展示框不透明模式(形状纹理 alpha 二值化)
+     */
+    private void renderWorld3dShapeMasked(ModelGeometry geo, PoseStack pose, int packedColor,
+                                          float offset, boolean opaque) {
+        int tintColor = darkenByLuma(packedColor, geo.luma);
+        int grouped = 0;
+        for (Map.Entry<TextureAtlasSprite, List<BakedQuad>> entry : geo.bySprite.entrySet()) {
+            int[] quadIndices = geo.spriteQuadIndices.get(entry.getKey());
+            if (quadIndices == null || quadIndices.length == 0) {
+                continue;
+            }
+            grouped += quadIndices.length;
+            // 烘白:ShapeKey 与描边色无关 → 全部物品共享同一张形状纹理(缓存稳定,不随颜色膨胀)
+            ResourceLocation shapeTex = shapeTextureFor(entry.getKey(), 0xFFFFFFFF, false, false, opaque);
+            VertexConsumer consumer = outlineBuffers.getBuffer(worldEmissiveOutlineRenderType(shapeTex));
+            renderVertexNormalExpand(geo, pose, consumer, tintColor, offset, quadIndices);
+        }
+        if (grouped < geo.quads.size()) {
+            // 无 sprite 的 quad(第三方手写模型,groupBySprite 会跳过):沿用纯白外扩,
+            // 不静默丢失描边(右键 sprite 为 null 的模型极罕见,属防御分支)
+            int[] rest = new int[geo.quads.size() - grouped];
+            int ri = 0;
+            for (int qi = 0; qi < geo.quads.size(); qi++) {
+                if (geo.quads.get(qi).getSprite() == null) {
+                    rest[ri++] = qi;
+                }
+            }
+            if (ri > 0) {
+                VertexConsumer consumer = outlineBuffers.getBuffer(worldEmissiveOutlineRenderType(WHITE_TEXTURE));
+                renderVertexNormalExpand(geo, pose, consumer, tintColor, offset, rest);
+            }
+        }
     }
 
     /**
@@ -1442,11 +1536,14 @@ public final class OutlineRenderer {
         Map<TextureAtlasSprite, int[]> spriteQuadIndices = geo.spriteQuadIndices;
         List<Vec3i> geoNormals = geo.expandNormals;
         Vector3f tmp = new Vector3f();
-        // 资源包动画定义物品(2026-10-31):白色形状烘焙 + 顶点色逐帧染色 —— 形状纹理
-        // 缓存键含烘焙色,动画色逐帧连续变化会按帧爆纹理,故改烘 rgb=白(缓存键恒定,
-        // 走现有 ShapeKey),颜色经顶点色传入(shader: vertexColor×白texel=顶点色,
-        // 与烘焙色数学等价);形状遮罩(alpha)不变,铁律 3 语义不受影响。
-        boolean animated = OutlineResources.isAnimated(currentOutlinedItem());
+        // 资源包动画定义物品(2026-10-31)与 RPG 虹灯(2026-11-08):白色形状烘焙 +
+        // 顶点色逐帧染色 —— 形状纹理缓存键含烘焙色,动画色逐帧连续变化会按帧爆纹理
+        // (虹灯色含时间分量,每帧不同),故改烘 rgb=白(缓存键恒定,走现有 ShapeKey),
+        // 颜色经顶点色传入(shader: vertexColor×白texel=顶点色,与烘焙色数学等价);
+        // 形状遮罩(alpha)不变,铁律 3 语义不受影响。虹灯开启时 ColorResolver.resolve
+        // 对全部描边物品恒返回虹灯色(优先级仅次禁用),故按配置全局判定。
+        boolean animated = OutlineResources.isAnimated(currentOutlinedItem())
+                || Config.ENABLE_RPG_RAINBOW.get();
         // 形状纹理烘焙颜色模式(GUI 内恒纯色,与方块一致;GUI 外按混色配置烘焙
         // "描边色×贴图像素色",贴合物品本体颜色调制)。GUI 由 GuiGraphicsMixin 的
         // IN_GUI_RENDER 标记保证。
@@ -1579,6 +1676,8 @@ public final class OutlineRenderer {
                 }
             } catch (Exception e) {
                 // 源贴图格式不支持像素读取(如 RGB 无 alpha)→ 无形状信息,回退纯色矩形。
+                // 2026-11-08:补节流诊断 —— 此回退此前完全静默,"方形轮廓"报障无从定位。
+                logShapeFallback(source, "shape-bake-exception:" + e.getClass().getSimpleName());
                 return WHITE_TEXTURE;
             }
             loc = ResourceLocation.fromNamespaceAndPath("enchanted_outlines",
@@ -1633,6 +1732,8 @@ public final class OutlineRenderer {
         if (src == null) {
             // spriteOriginalImage 反射 originalImage 失败 → 回退 WHITE_TEXTURE(1×1 不透明)
             // → 8 方向平移画出整块矩形。本体直接渲染贴图(不依赖 originalImage)所以正常。
+            // 2026-11-08:补节流诊断 —— 此回退此前完全静默,"方形轮廓"报障无从定位。
+            logShapeFallback(sprite.contents().name(), "sprite-original-image-null");
             return WHITE_TEXTURE;
         }
         int frame = this.spriteFrameTracker.getOrDefault(sprite.contents(), 0);
@@ -1708,6 +1809,33 @@ public final class OutlineRenderer {
         }
         EnchantedOutlines.LOGGER.info(
                 "[Enchanted Outlines] 纹理读取失败(描边降级为 GPU 采样原纹理): 原因={} 纹理={}",
+                reason, texture);
+    }
+
+    /**
+     * 形状纹理不可用(描边回退纯白矩形)的节流诊断日志。
+     * <p>
+     * 纯白矩形 = 描边退化为整片实心块(既有的"方形轮廓"症状)。2026-11-08 之前
+     * {@link #shapeTextureFor} 的反射失败与 {@link #shapeTexture} 的像素读取异常
+     * 两条回退完全静默,用户报障时日志零线索。10 秒/原因#纹理 一次,info 级
+     * —— 与 {@link #logTextureReadFailure} 同一节流表、同一"低频常驻诊断"定位
+     * (铁律 6 的合法例外)。
+     *
+     * @param texture 形状来源纹理(通常为 atlas 精灵名)
+     * @param reason  失败原因描述
+     */
+    private static void logShapeFallback(ResourceLocation texture, String reason) {
+        String key = reason + "#" + texture;
+        long now = System.currentTimeMillis();
+        if (TEX_READ_FAIL_LOG_THROTTLE.size() > LOG_THROTTLE_MAX_ENTRIES) {
+            TEX_READ_FAIL_LOG_THROTTLE.clear(); // 容量兜底:仅丢"上次打印时刻",节流窗口重来
+        }
+        Long last = TEX_READ_FAIL_LOG_THROTTLE.put(key, now);
+        if (last != null && now - last < 10_000L) {
+            return; // 10 秒窗口内同原因同纹理只打印一次
+        }
+        EnchantedOutlines.LOGGER.info(
+                "[Enchanted Outlines] 形状纹理不可用(描边退化为纯白矩形): 原因={} 纹理={}",
                 reason, texture);
     }
 

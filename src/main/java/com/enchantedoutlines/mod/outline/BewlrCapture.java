@@ -87,6 +87,13 @@ final class BewlrCapture {
      */
     static final float CAPTURE_MAX_CENTER_DIST = 16.0f;
 
+    /**
+     * UV 退化判定阈值(2026-11-08,方案 A):顶点 UV 在某一轴上的跨度小于本值即视为
+     * 退化(零宽面 UV = 一条线)。贴图 alpha 遮罩沿退化轴拉成均匀色带 → 整个 quad
+     * 不透明 → 实心矩形,故此类 quad 不发射描边(铁律 6.9 宁可无描边不画错位)。
+     */
+    static final float UV_DEGENERATE_EPS = 1e-4f;
+
     /** 捕获守卫拒绝诊断日志的节流表(原因#物品ID#context → 上次打印时刻 ms)。 */
     private static final Map<String, Long> GUARD_LOG_THROTTLE = new ConcurrentHashMap<>();
 
@@ -878,6 +885,7 @@ final class BewlrCapture {
         // ② 零厚度贴片 quad:面内 8 方向偏移 + 贴图 alpha 形状(与平坦路径同语义,
         // 描边跟随装饰轮廓);贴图缺失时跳过(禁退 WHITE —— alpha 全 1 = 方形背景,
         // 铁律 6.9);每段发射后即时 endBatch(铁律 6.7 批次闭合)。
+        int degSkip = 0; // UV 退化(零宽面)跳过的 quad 数,写进节流诊断
         if (flatQuads > 0 && geo.texture() != null) {
             float d = offsetLocal; // 像素语义与 ① 一致(GUI /16,世界 ×BEWLR_3D_SCALE)
             float[] uvs = geo.uvs();
@@ -891,6 +899,11 @@ final class BewlrCapture {
                 int axis = quadNormalAxis(verts, b);
                 if (axis < 0) {
                     continue; // 退化 quad(零面积):跳过
+                }
+                if (isDegenerateUv(uvs, q)) {
+                    degSkip++;
+                    continue; // UV 退化(零宽面):遮罩沿退化轴拉成均匀色带 → 实心矩形。
+                    // 方案 A(2026-11-08,Hazen 武器展示框方形):不发射,宁可无描边
                 }
                 // 法线轴 → 面内两轴(8 方向偏移沿面内,不沿法线)
                 float ux, uy, uz, vx, vy, vz;
@@ -923,12 +936,53 @@ final class BewlrCapture {
         var itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
         logCaptureDiag("flatmix#" + itemId,
                 String.format(Locale.ROOT,
-                        "[Enchanted Outlines] 混合几何双发射(mix 节流): item=%s total=%d solid=%d zeroThick=%d overlaySkip=%d tex=%s",
-                        itemId, quads, solidQuads, flatQuads, overlayQuads, geo.texture()));
+                        "[Enchanted Outlines] 混合几何双发射(mix 节流): item=%s total=%d solid=%d zeroThick=%d degUV=%d overlaySkip=%d tex=%s",
+                        itemId, quads, solidQuads, flatQuads, degSkip, overlayQuads, geo.texture()));
         if (solidQuads == 0 && (flatQuads == 0 || geo.texture() == null)) {
             return null; // 无可发射几何:交 v1(同平坦分支语义)
         }
         return Boolean.TRUE;
+    }
+
+    /**
+     * 零厚度贴片 / 平坦路径的 UV 退化判定(2026-11-08,方案 A)。
+     * <p>
+     * <b>根因</b>:GeckoLib 零厚度 cube(某轴 size=0)的盒式 UV 在零宽面上必然退化
+     * (u0==u1 或 v0==v1),捕获到的顶点 UV 沿该轴跨度 ≈ 0。以贴图 alpha 作遮罩时,
+     * 退化轴上的采样被拉成<b>均匀色带</b> → 整个 quad 不透明 → 描边渲染成实心矩形
+     * (Hazen 武器展示框"方形",2026-11-08 实机反馈)。
+     * <p>
+     * <b>处置</b>:退化 quad 不发射描边(铁律 6.9「宁可无描边,不画错位」)。
+     * 武器有立体/正常 UV 的部分照常描边,只去掉不可遮罩的实心块。
+     *
+     * @param uvs       捕获的 UV 数组(每顶点 2 个 float,每 quad 8 个)
+     * @param quadIndex quad 序号
+     * @return true = UV 在某轴退化(跨度小于 EPS),遮罩无法成形
+     */
+    private static boolean isDegenerateUv(float[] uvs, int quadIndex) {
+        int base = quadIndex * 8;
+        if (base + 7 >= uvs.length) {
+            return true; // UV 缺失:按退化处理,不画
+        }
+        float uMin = Float.MAX_VALUE, uMax = -Float.MAX_VALUE;
+        float vMin = Float.MAX_VALUE, vMax = -Float.MAX_VALUE;
+        for (int v = 0; v < 4; v++) {
+            float u = uvs[base + v * 2];
+            float vv = uvs[base + v * 2 + 1];
+            if (u < uMin) {
+                uMin = u;
+            }
+            if (u > uMax) {
+                uMax = u;
+            }
+            if (vv < vMin) {
+                vMin = vv;
+            }
+            if (vv > vMax) {
+                vMax = vv;
+            }
+        }
+        return (uMax - uMin) < UV_DEGENERATE_EPS || (vMax - vMin) < UV_DEGENERATE_EPS;
     }
 
     /**
@@ -1067,22 +1121,33 @@ final class BewlrCapture {
         // 采样纹理:调用方已保证非 null(见 renderCapturedV2 平坦分支的守卫)
         // 节流诊断(flat):保留,便于确认提取成功的纹理是否符合预期。
         ResourceLocation sampleTexture = geo.texture();
+        float[] verts = geo.positions();
+        float[] uvs = geo.uvs();
+        int quads = verts.length / 12;
+        boolean[] degenerate = new boolean[quads];
+        int degSkip = 0;
+        for (int q = 0; q < quads; q++) {
+            degenerate[q] = isDegenerateUv(uvs, q);
+            if (degenerate[q]) {
+                degSkip++;
+            }
+        }
         logCaptureDiag("flat#" + sampleTexture,
                 String.format(Locale.ROOT,
-                        "[Enchanted Outlines] 平坦捕获几何贴图形状描边(flat 节流): sample=%s extracted=%s uvPairs=%d",
-                        sampleTexture, geo.texture() != null, geo.uvs().length / 2));
+                        "[Enchanted Outlines] 平坦捕获几何贴图形状描边(flat 节流): sample=%s extracted=%s uvPairs=%d degUV=%d",
+                        sampleTexture, geo.texture() != null, uvs.length / 2, degSkip));
         VertexConsumer consumer = renderer.outlineBuffers
                 .getBuffer(renderer.armorOutlineRenderType(sampleTexture, color));
         Matrix4f poseMatrix = pose.last().pose();
         Vector3f tmp = new Vector3f();
-        float[] verts = geo.positions();
-        float[] uvs = geo.uvs();
-        int quads = verts.length / 12;
         for (float[] dir : OutlineRenderer.DIAG_OFFSETS) {
             float ox = (ux * dir[0] + vx * dir[1]) * d;
             float oy = (uy * dir[0] + vy * dir[1]) * d;
             float oz = (uz * dir[0] + vz * dir[1]) * d;
             for (int q = 0; q < quads; q++) {
+                if (degenerate[q]) {
+                    continue; // UV 退化:遮罩均匀色带 → 实心矩形,不发射(方案 A)
+                }
                 int b = q * 12;
                 for (int v = 0; v < 4; v++) {
                     int i = b + v * 3;

@@ -3,6 +3,7 @@ package com.enchantedoutlines.mod.mixin;
 import com.enchantedoutlines.mod.config.Config;
 import com.enchantedoutlines.mod.outline.ColorResolver;
 import com.enchantedoutlines.mod.outline.OutlineRenderer;
+import com.enchantedoutlines.mod.outline.PlatformCompat;
 import com.enchantedoutlines.mod.outline.SodiumCompat;
 
 import net.minecraft.client.Minecraft;
@@ -169,6 +170,20 @@ public abstract class ItemInHandRendererMixin {
         // seed 与本体 renderItem → renderStatic 的 seed 完全一致
         int seed = entity.getId() + context.ordinal();
         BakedModel model = itemRenderer.getModel(stack, level, entity, seed);
+
+        // 平台全自定义渲染物品(2026-11-08, issue #4):本体 render 被平台 cancel 后
+        // 由注册的渲染器全自绘,占位模型没有实际几何 → 平面描边必然错位,直接跳过
+        // (宁可无描边,不画错位描边,对齐铁律 6.9 的同源原则)。
+        if (PlatformCompat.hasDynamicRenderer(stack)) {
+            return;
+        }
+        // 平台渲染期模型替换探测(2026-11-08, issue #4):Blackgear Platform(Vanilla
+        // Backport 等)在 ItemRenderer.render 的 @ModifyVariable 里对手持 context 提交
+        // 专用模型(如矛的 <material>_spear_in_hand,32x32 贴图 + 专属 display 变换),
+        // 而 getModel 的 @ModifyVariable 只咨询 renderThirdPerson(矛恒 pass)→ 上方
+        // getModel 拿到的是 GUI 平面模型(16x16)。描边必须用与本体相同的 in_hand
+        // 模型,否则 = GUI 剪影套手持本体,形状/朝向/比例全部错位(issue #4 根因)。
+        model = PlatformCompat.resolveRenderModel(stack, context, model);
 
         // 盾牌/三叉戟手持本体是 BEWLR(占位模型无几何),用近似盒模型描边
         // (transforms 取当前解析出的模型,blocking/投掷等 display 变化跟随本体)。
