@@ -10,6 +10,7 @@ import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
 
+import com.enchantedoutlines.mod.platform.Platform;
 import com.mojang.logging.LogUtils;
 
 import net.minecraft.resources.ResourceLocation;
@@ -589,10 +590,8 @@ public final class Config {
             if (eq <= 0) {
                 continue;
             }
-            ResourceLocation id;
-            try {
-                id = ResourceLocation.parse(seg.substring(0, eq).trim());
-            } catch (RuntimeException ignored) {
+            ResourceLocation id = Platform.tryParse(seg.substring(0, eq).trim());
+            if (id == null) {
                 continue;
             }
             int rgb = parseHex(seg.substring(eq + 1).trim());
@@ -619,10 +618,8 @@ public final class Config {
             if (eq <= 0) {
                 continue;
             }
-            ResourceLocation id;
-            try {
-                id = ResourceLocation.parse(seg.substring(0, eq).trim());
-            } catch (RuntimeException ignored) {
+            ResourceLocation id = Platform.tryParse(seg.substring(0, eq).trim());
+            if (id == null) {
                 continue;
             }
             try {

@@ -3,6 +3,8 @@ package com.enchantedoutlines.mod;
 import org.slf4j.Logger;
 
 import com.enchantedoutlines.mod.config.Config;
+import com.enchantedoutlines.mod.platform.NeoForgePlatformSupport;
+import com.enchantedoutlines.mod.platform.Platform;
 import com.mojang.logging.LogUtils;
 
 import net.neoforged.bus.api.IEventBus;
@@ -24,6 +26,8 @@ public class EnchantedOutlines {
     public static final Logger LOGGER = LogUtils.getLogger();
 
     public EnchantedOutlines(IEventBus modEventBus, ModContainer modContainer) {
+        // 平台门面必须最先安装：共享源码中的资源位置构造/模组查询都依赖它。
+        Platform.install(new NeoForgePlatformSupport());
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
         modEventBus.addListener(this::onModConfig);
     }

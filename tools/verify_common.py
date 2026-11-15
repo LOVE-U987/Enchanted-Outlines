@@ -32,8 +32,12 @@ from typing import Iterable, Iterator, Optional
 #: 仓库根目录（tools/ 的上级）
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-#: Java 源码根
+#: Java 源码根（当前构建的版本专属代码）
 JAVA_ROOT = os.path.join(ROOT, "src", "main", "java")
+#: 跨版本共享源码根（1.20.1 移植引入；由各版本构建共同引用）
+COMMON_JAVA_ROOT = os.path.join(ROOT, "common", "src", "main", "java")
+#: 全部 Java 源码根；铁律扫描默认覆盖这些根，避免共享代码成为检查盲区
+JAVA_ROOTS = (JAVA_ROOT, COMMON_JAVA_ROOT)
 #: 本模组 Java 包根
 MOD_ROOT = os.path.join(JAVA_ROOT, "com", "enchantedoutlines", "mod")
 #: mixin 包目录
@@ -80,17 +84,27 @@ def read_text(path: str) -> str:
         return fh.read()
 
 
-def iter_java_files(root: str = JAVA_ROOT) -> Iterator[str]:
+def iter_java_files(root: Optional[str] = None) -> Iterator[str]:
     """递归枚举 Java 源文件。
 
-    :param root: 起始目录
-    :return: 绝对路径迭代器（跳过 build/ 等产物目录）
+    :param root: 起始目录；None = 扫描全部源码根（src/main/java + common/src/main/java）
+    :return: 绝对路径迭代器（跳过 build/ 等产物目录，同一路径只产出一次）
     """
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in ("build", "bin", ".git")]
-        for name in sorted(filenames):
-            if name.endswith(".java"):
-                yield os.path.join(dirpath, name)
+    roots = JAVA_ROOTS if root is None else (root,)
+    seen: set[str] = set()
+    for base in roots:
+        if not os.path.isdir(base):
+            continue
+        for dirpath, dirnames, filenames in os.walk(base):
+            dirnames[:] = [d for d in dirnames if d not in ("build", "bin", ".git")]
+            for name in sorted(filenames):
+                if not name.endswith(".java"):
+                    continue
+                path = os.path.join(dirpath, name)
+                if path in seen:
+                    continue
+                seen.add(path)
+                yield path
 
 
 # ==================================================================

@@ -9,6 +9,7 @@ import java.util.WeakHashMap;
 
 import com.enchantedoutlines.mod.EnchantedOutlines;
 import com.enchantedoutlines.mod.config.Config;
+import com.enchantedoutlines.mod.platform.Platform;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
@@ -17,8 +18,6 @@ import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
-
-import net.neoforged.fml.ModList;
 
 /**
  * Sodium 动画纹理兼容(2026-10-25,动态物品附魔后动画冻结修复)。
@@ -159,7 +158,7 @@ public final class SodiumCompat {
         }
         resolved = true;
         try {
-            if (!ModList.get().isLoaded(SODIUM_MODID)) {
+            if (!Platform.isModLoaded(SODIUM_MODID)) {
                 return null;
             }
             Class<?> api = Class.forName(SPRITE_UTIL_CLASS);

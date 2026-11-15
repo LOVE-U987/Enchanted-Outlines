@@ -6,10 +6,10 @@ import com.enchantedoutlines.mod.config.EnchantedConfigScreen;
 import com.enchantedoutlines.mod.outline.OutlineColorEvent;
 import com.enchantedoutlines.mod.outline.OutlineRenderer;
 import com.enchantedoutlines.mod.outline.OutlineResources;
+import com.enchantedoutlines.mod.platform.Platform;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 
 import net.minecraft.client.renderer.ShaderInstance;
-import net.minecraft.resources.ResourceLocation;
 
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
@@ -32,9 +32,8 @@ import net.neoforged.neoforge.event.level.LevelEvent;
 @Mod(value = EnchantedOutlines.MODID, dist = Dist.CLIENT)
 public class EnchantedOutlinesClient {
 
-    /** 描边着色器位置 → enchanted_outlines:shaders/core/outline.{json,vsh,fsh} */
-    private static final ResourceLocation OUTLINE_SHADER =
-            ResourceLocation.fromNamespaceAndPath(EnchantedOutlines.MODID, "outline");
+    /** 描边着色器资源路径（命名空间由 {@link EnchantedOutlines#MODID} 提供）。 */
+    private static final String OUTLINE_SHADER_PATH = "outline";
 
     public EnchantedOutlinesClient(IEventBus modEventBus, ModContainer container) {
         container.registerExtensionPoint(IConfigScreenFactory.class,
@@ -55,7 +54,9 @@ public class EnchantedOutlinesClient {
     private void onRegisterShaders(RegisterShadersEvent event) {
         try {
             ShaderInstance shader = new ShaderInstance(
-                    event.getResourceProvider(), OUTLINE_SHADER, DefaultVertexFormat.NEW_ENTITY);
+                    event.getResourceProvider(),
+                    Platform.id(EnchantedOutlines.MODID, OUTLINE_SHADER_PATH),
+                    DefaultVertexFormat.NEW_ENTITY);
             event.registerShader(shader, OutlineRenderer.INSTANCE::setOutlineShader);
         } catch (IOException e) {
             EnchantedOutlines.LOGGER.error("Failed to load the outline shader; outlines are disabled.", e);

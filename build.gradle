@@ -26,6 +26,10 @@ sourceSets.main.resources {
     exclude("src/generated/**/.cache") // datagen cache files
 }
 
+// 跨版本共享源码（1.20.1 移植引入）：只允许对两个 Minecraft 版本都源兼容的代码。
+// 平台差异通过 com.enchantedoutlines.mod.platform 门面隔离，由各版本注入实现。
+sourceSets.main.java.srcDir 'common/src/main/java'
+
 repositories {
     // Add here additional repositories if required by some of the dependencies below.
 }

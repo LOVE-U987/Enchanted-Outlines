@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import com.enchantedoutlines.mod.EnchantedOutlines;
+import com.enchantedoutlines.mod.platform.Platform;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParseException;
@@ -142,7 +143,7 @@ public final class OutlineResources extends SimplePreparableReloadListener<Map<R
         if (slash <= 0 || slash == path.length() - 1 || path.indexOf('/', slash + 1) >= 0) {
             return null;
         }
-        return ResourceLocation.fromNamespaceAndPath(path.substring(0, slash), path.substring(slash + 1));
+        return Platform.id(path.substring(0, slash), path.substring(slash + 1));
     }
 
     /**
